@@ -9,16 +9,22 @@ This is the implementation roadmap for the first package in this repo: `@jakeryd
 - Root repo remains private and unpublished.
 - Package includes a Pi extension, a Pi skill/authoring guide, and a package README.
 - MVP preview uses a localhost-only static server from day one.
+- **Store base path**: `~/.pi/artifacts/`. The store is the durable, cross-project, cross-session source of truth — not per-session agent runtime state — so it lives in the `~/.pi` ecosystem-data namespace (alongside other tools' data) rather than inside `~/.pi/agent/` next to the disposable `sessions/`. Provenance ties to a session logically via `sessionKey`/`sessionFile` in the manifest, not by physical location. *Revisit if Pi later ships an official extension data-dir convention/API* (none exists today — the path is chosen manually with `node:os`/`node:path`).
+- **`id` derivation**: `slugify(title)`, with collision handling by numeric suffix (`-2`, `-3`, …). Locked now because the manifest, store, and preview server all encode it.
 
 ## MVP
 
-Build the smallest useful package before committing to the full viewer architecture:
+Build the smallest useful package before committing to the full viewer architecture. The MVP is split into two ordered milestones: **MVP-1 proves the entire structural loop with markdown only**, then **MVP-2 layers on the html stack**. This derisks everything structural (store, manifest, tools, gate, server, session provenance) before the heavier shared-runtime-injection work, and matches the "get a usable surface early" principle. The full design is unchanged — this only sequences the build.
+
+### MVP-1 — markdown-only core loop
+
+The smallest end-to-end slice. Markdown is the only `stack`; no shared html runtime yet.
 
 1. Monorepo package scaffold under `packages/`.
 2. Pi extension loads from the package.
 3. `scaffold_artifact` creates an empty bundle in `~/.pi/artifacts/<id>/`:
    - `manifest.json`
-   - blank `index.md` or `index.html`
+   - blank `index.md`
    - `assets/`
 4. `render_artifact` validates/normalizes the authored bundle and returns warnings/errors.
 5. Basic artifact store + manifest metadata:
@@ -29,14 +35,25 @@ Build the smallest useful package before committing to the full viewer architect
    - `sessionFile` / derived `sessionKey` when available
    - `cwd`
    - timestamps
-6. Basic markdown/html handling.
+6. Markdown validation gate: Prettier (autofix) + markdownlint (warn/error) + KaTeX strict (error). **Mermaid parse-check is gated behind the feasibility spike (see Early spikes); ship it warn-only or skipped if it can't run headless in Node.**
 7. Simple preview path through a tiny local server from day one:
    - bind to localhost only
    - serve the selected artifact directory
    - serve package runtime files
    - reject path traversal
    - do not proxy external network requests by default
-8. Authoring skill that tells the agent how to create artifacts with the supported runtime.
+   - **set a baseline restrictive `Content-Security-Policy` header on all responses** (cheap, and it is the real boundary once the html stack lands — establish it now)
+8. Markdown authoring skill that tells the agent how to create portable markdown artifacts within the ruleset.
+
+### MVP-2 — html stack
+
+Adds the dynamic-UI lane on top of the proven core loop.
+
+1. `scaffold_artifact` supports `type: "html"` → blank `index.html` + `assets/` (same shape as markdown).
+2. Shared html runtime injection at render time: semantic CSS base (Pico), Alpine, one charting lib, icons — served by the preview server, never vendored per bundle.
+3. html validation gate: Prettier (autofix) + HTMLHint or similar (warn/error) + custom runtime-check (warn).
+4. html authoring skill: how semantic HTML maps to the CSS base, dropping an Alpine directive, the chart-spec shape, icon names — the enabler that converts installed capability into low agent effort.
+5. Confirm the baseline CSP from MVP-1 holds for runtime-injected JS (Alpine/charts execute in the browser surface).
 
 ## Early spikes
 
@@ -45,7 +62,8 @@ Resolve these before investing heavily in the full viewer:
 - Viewer runtime: Pi/native webview, general webview binding, or local server + browser + WebSocket/SSE.
 - Lifecycle behavior across `/resume`, `/new`, and `/fork`.
 - Session identity source: confirm `ctx.sessionManager.getSessionFile()` is sufficient and derive `sessionKey` from it.
-- HTML rendering security: sandboxing, CSP, network policy, file access, and vendored JS policy.
+- **Mermaid parse-check feasibility in Node**: Mermaid historically needs a DOM (jsdom/puppeteer) even for `mermaid.parse`, unlike KaTeX/markdownlint/Prettier/HTMLHint which run cleanly headless. Confirm whether it runs headless before committing it to the gate. **Fallback if it can't: Mermaid validation degrades to warn-only or is skipped — it must never block the gate or the MVP.**
+- HTML rendering security: sandboxing, CSP, network policy, file access, and vendored JS policy. (Baseline CSP is **not** deferred — it ships in MVP-1's preview server; this spike covers the deeper sandboxing posture.)
 - Preview server details: port selection, lifecycle/shutdown, stale server cleanup, and path allowlisting.
 
 ## Deferred until after MVP

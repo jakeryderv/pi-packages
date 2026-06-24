@@ -44,6 +44,7 @@ Author **portable enriched markdown** — plain `.md` files that render consiste
 ## Compatibility tiers
 
 ### Tier 1 — universal, use freely
+
 CommonMark plus the formal GFM extensions. Renders identically everywhere.
 
 - Headings, bold / italic, lists, links, **images**, code blocks, blockquotes
@@ -52,6 +53,7 @@ CommonMark plus the formal GFM extensions. Renders identically everywhere.
 - Strikethrough
 
 ### Tier 2 — widely supported, safe in practice
+
 Not in the formal spec, but all three renderers handle them.
 
 - **LaTeX math** (`$...$`, `$$...$$`) — common commands only (see ruleset)
@@ -59,6 +61,7 @@ Not in the formal spec, but all three renderers handle them.
 - **Footnotes**
 
 ### Tier 3 — renderer-specific, avoid for portability
+
 - Raw HTML with CSS styling (GitHub strips style attributes)
 - Wikilinks `[[Note]]` (Obsidian-only)
 - Obsidian embeds, block references, custom callout types
@@ -174,19 +177,22 @@ This mirrors the compiler/test loop a coding agent already understands, so the f
 ## Why it matters more here
 
 - **The agent writes blind.** It can't see the render — the viewer renders elsewhere. A parse-check is the agent's only pre-flight signal that a Mermaid block or math expression will actually display. Without it, the failure mode is "looks fine to the agent, renders broken in the viewer."
-- **The highest-value checks are real parses, not regexes.** Running Mermaid through its own parser and KaTeX in strict mode catches malformed diagrams/math *before* they render as broken blocks.
+- **The highest-value checks are real parses, not regexes.** Running Mermaid through its own parser and KaTeX in strict mode catches malformed diagrams/math *before* they render as broken blocks. (Caveat: KaTeX strict runs cleanly headless in Node; **Mermaid's parser historically needs a DOM (jsdom/puppeteer)**, so its in-gate feasibility is a spike — if it can't run headless it degrades to warn-only or is skipped, never blocking. See the roadmap's Early spikes.)
 
 ## Checks per type — reuse, don't reinvent
 
 Wire up battle-tested tools rather than writing a custom linter; they're fast, maintained, and the agent already knows their output format.
 
 **markdown:**
+
 - **Prettier** (autofix) — normalizes spacing, list markers, table alignment.
 - **markdownlint** (warn/error) — heading levels, list nesting, malformed tables.
-- **Mermaid parse + KaTeX strict** (error) — the render-validity checks; highest value.
+- **KaTeX strict** (error) — render-validity check for math; runs headless, highest value.
+- **Mermaid parse** (error *if feasible*) — render-validity check for diagrams; highest value, but gated behind the headless-Node feasibility spike. Falls back to warn-only/skipped if Mermaid's parser can't run without a DOM.
 - **Custom tier-check** (warn) — *your* portability rules: Tier 3 syntax (wikilinks, styled HTML) → warning; MathJax-only macros outside the KaTeX subset → warning.
 
 **html:**
+
 - **Prettier** (autofix) — HTML/CSS/JS formatting.
 - **HTMLHint** or similar (warn/error) — unclosed tags, bad nesting, broken attributes.
 - **Custom runtime-check** (warn) — references only classes/capabilities the shared runtime actually provides; flags drift from the curated kit.
@@ -214,11 +220,13 @@ Once an artifact has its own files — content, data, generated images — it st
 The scaffold/shared-runtime model gives a clean split:
 
 **Global — provided by the viewer, the agent never writes these:**
+
 - Markdown renderer (markdown-it / KaTeX / Mermaid)
 - html runtime (semantic CSS base, Alpine, charting lib, icons)
 - The authoring guide (the skill that makes the global tools usable without pre-wiring)
 
 **Bundled — in the isolated artifact dir, the agent writes these:**
+
 - `manifest.json`
 - `index.md` / `index.html` — blank at scaffold, filled with content by the agent
 - `assets/` — the artifact's own data, images, generated SVGs
@@ -432,8 +440,6 @@ The semantic tags get styled by the shared CSS base; `x-data`/`@click`/`x-text` 
 
 The throughline: the agent touched only `index.html`'s content and two tool calls. Structure, styling, interactivity engine, charting, validation, rendering, and session-scoping were all supplied by the system.
 
-
-
 A build order that gets a usable surface early, then layers on reactive and export features.
 
 ## Components
@@ -455,11 +461,14 @@ A build order that gets a usable surface early, then layers on reactive and expo
 
 ## Phases
 
-1. **Runtimes + store + tools + gate + local preview server (no full UI).** Stand up the markdown renderer and the shared html runtime (CSS base, Alpine, charts, icons) plus its authoring guide; implement the bundle store, `scaffold_artifact`, and `render_artifact` with the validation gate (start with Prettier autofix + Mermaid/KaTeX parse-checks; custom tier/runtime-checks as a fast-follow). Verify content-only bundles land in `~/.pi/artifacts/` with correct manifests, validated and rendered against the shared runtime. Serve previews through a tiny localhost server from day one, scoped to the selected artifact directory plus package runtime files; this avoids `file://` asset-fetch limitations and starts the security boundary early. Proves the core loop without full viewer work.
-2. **Static viewer.** Add the `/viewer` surface showing the full artifact list and rendering a selected bundle via the renderer registry. No live sync yet — manual refresh is fine. Confirms the chosen viewer runtime, window/process lifecycle, and registry-driven rendering of both types.
-3. **Session sync.** Wire `session_start` / session-replacement events to compute the active `sessionKey` and push the filtered list into the open viewer. Delivers the reactive behavior: switch session → list updates.
-4. **Bidirectional actions.** Add the window→agent channel so a click sends an action back (open, expand, regenerate). Turns the viewer from display-only into interactive. *(Has real design uncertainty — define the action protocol here, don't assume it's just wiring.)*
-5. **Export.** Add single-file export (inlined HTML first, then PDF / md).
+> The MVP (Phase 1) is split **markdown-first**, then **html**, to derisk everything structural before the heavier shared-runtime-injection work. See the [roadmap](../docs/visualization-artifacts-roadmap.md) for the authoritative, sequenced build order.
+
+1. **MVP-1 — markdown-only core loop (no full UI).** Stand up the markdown renderer plus its authoring guide; implement the bundle store, `scaffold_artifact`, and `render_artifact` with the validation gate (Prettier autofix + markdownlint + KaTeX strict; Mermaid parse-check gated behind the headless-Node feasibility spike, warn-only/skipped if it can't run; custom tier-check as a fast-follow). Verify content-only markdown bundles land in `~/.pi/artifacts/` with correct manifests, validated and rendered. Serve previews through a tiny localhost server from day one — scoped to the selected artifact directory plus package runtime files, with a baseline restrictive CSP — which avoids `file://` asset-fetch limitations and starts the security boundary early. Proves the core loop without full viewer work or any html-runtime weight.
+2. **MVP-2 — html stack.** Add the shared html runtime (CSS base, Alpine, charts, icons) injected at render time, its authoring guide, and the html validation gate (Prettier + HTMLHint + runtime-check). Confirm the baseline CSP holds for runtime-injected JS. Brings up the dynamic-UI lane on the proven core loop.
+3. **Static viewer.** Add the `/viewer` surface showing the full artifact list and rendering a selected bundle via the renderer registry. No live sync yet — manual refresh is fine. Confirms the chosen viewer runtime, window/process lifecycle, and registry-driven rendering of both types.
+4. **Session sync.** Wire `session_start` / session-replacement events to compute the active `sessionKey` and push the filtered list into the open viewer. Delivers the reactive behavior: switch session → list updates.
+5. **Bidirectional actions.** Add the window→agent channel so a click sends an action back (open, expand, regenerate). Turns the viewer from display-only into interactive. *(Has real design uncertainty — define the action protocol here, don't assume it's just wiring.)*
+6. **Export.** Add single-file export (inlined HTML first, then PDF / md).
 
 ## Open decisions
 
@@ -470,5 +479,5 @@ A build order that gets a usable surface early, then layers on reactive and expo
 - **Shared-runtime versioning** — pin the curated runtime (CSS base, Alpine, charts, icons) and refresh deliberately; one version serves all artifacts, so a bump re-renders existing ones. The rare per-artifact vendored library (the escape hatch) is pinned within that bundle.
 - **MVP preview transport** — use a tiny local preview server from day one. It should serve only the selected artifact directory and package runtime files, reject path traversal, bind to localhost, and avoid any external-network proxying by default.
 - **Lifecycle / cleanup** — the global store grows unbounded. Decide retention: keep-forever with a manual `/artifacts clear`, age-based eviction, or per-session pruning on session end. `created` (and a possible `last_rendered`) in the manifest support whatever policy is chosen.
-- **Trust / security** — html artifacts execute agent-generated markup/JS in the viewer. This sits near the same trust model as a coding agent that already runs code, but the posture should be explicit before the viewer is built: render artifacts in a sandboxed iframe or equivalent isolation, avoid Node integration in rendered content, set a restrictive CSP, scope file access to the artifact directory, keep artifacts offline/local-only by default, define how per-artifact vendored JS is reviewed/loaded, and inherit Pi's project-trust gating before auto-rendering untrusted bundles.
+- **Trust / security** — html artifacts execute agent-generated markup/JS in the viewer. This sits near the same trust model as a coding agent that already runs code, but the posture should be explicit before the viewer is built: render artifacts in a sandboxed iframe or equivalent isolation, avoid Node integration in rendered content, set a restrictive CSP, scope file access to the artifact directory, keep artifacts offline/local-only by default, define how per-artifact vendored JS is reviewed/loaded, and inherit Pi's project-trust gating before auto-rendering untrusted bundles. **A baseline restrictive CSP is not deferred — it ships in Phase 1 (MVP-1's preview server) since a browser surface exists from day one; full sandboxing/iframe isolation and the rest of this posture stay deferred until the viewer is built.**
 - **Live data** — snapshot data works today (agent fetches → `assets/`). Real-time updating needs a new capability: Option C (viewer-brokered push over the session-sync channel) is the front-runner, with A/B as simpler fallbacks. It pressures self-containment, export, and security. Parked until needed — see Data injection.
