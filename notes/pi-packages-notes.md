@@ -1,0 +1,57 @@
+# Pi Packages — Monorepo Reference Notes
+
+Conceptual outline for building and publishing packages for the Pi coding agent. No code/commands — just the model to reason from.
+
+## The catalog & discovery
+
+- `pi.dev/packages` is an **index of npm packages**, not a separate registry.
+- A package appears there by being **published to npm** with the **`pi-package` keyword**. That keyword is the only gate.
+- Git-installed packages work fine for personal/team use but **won't show in the catalog** (the gallery scans npm only).
+- One npm package = one catalog entry. The catalog indexes per-package, not per-repo.
+
+## What a Pi package is
+
+- Just a normal **npm package** with a **`pi` manifest** added (a `pi` key in `package.json`) pointing at resource directories.
+- Bundles any mix of four resource types: **extensions** (TypeScript that adds tools/commands/events/UI), **skills** (on-demand markdown instructions), **prompt templates** (markdown that becomes slash commands), **themes** (color JSON).
+- If no manifest is present, Pi **auto-discovers** from conventional directories named for each resource type.
+- **No build step** — Pi loads TypeScript directly (via jiti), so packages ship source, not compiled output.
+
+## Dependency model
+
+- **Pi core packages** → declared as **peer dependencies** (wildcard range), never bundled. Pi provides them at runtime.
+- **Third-party runtime deps** → normal dependencies. Pi installs them automatically on package install.
+- **Depending on another Pi package** is the exception → must be bundled, not peered.
+- The "files" list controls what actually ships in the npm tarball: resource dirs + docs only.
+
+## Monorepo strategy (the chosen approach)
+
+- One repo, multiple publishable packages under a `packages/` workspace. The **repo root is private** and never published; each package publishes independently.
+- Each package is its **own npm package** → its **own catalog entry** → independently installable and versioned.
+- Why this over alternatives:
+  - **vs. one giant package**: users can install just the piece they want; each is independently discoverable. Use a single package only when the pieces are meaningless apart (e.g. an extension plus the skill that drives it).
+  - **vs. many separate repos**: shared tooling, one place to track everything, one CI/release setup — without losing the per-package catalog entries.
+- Keep core Pi packages in the **workspace-root dev dependencies** too, so local development resolves the same imports the published packages get at runtime.
+
+### Naming (decided)
+
+- **Repo**: `pi-packages` on GitHub (private root, never published; name just mirrors `pi.dev/packages`).
+- **Packages**: scoped under my handle → `@me/pi-*` (e.g. `@me/pi-foo`). Scoping avoids global npm name collisions and keeps the set grouped; the `pi-` prefix signals the ecosystem at a glance.
+- The npm identity (`@me/pi-*`) is what actually appears in install commands and catalog entries — the repo name is just a human label.
+
+## Lifecycle
+
+- **Develop**: run Pi with the working copy loaded live; edit and re-run. Optionally install locally into a real project to test the installed shape.
+- **Publish**: bump version, publish each package to npm independently (scoped packages need public access, especially on first publish).
+- **Update (user side)**: Pi compares installed vs latest npm version and pulls latest on update. Pinned-version installs are never auto-updated — so cut real semver bumps for changes to propagate.
+- **Release automation**: a conventional-commits → auto-changelog → version-bump → auto-publish flow works well per-package in a monorepo. Worth setting up once the package count grows.
+
+## Sources of truth & caveats
+
+- **Build against the official docs/examples** for correctness: the Pi docs site, the packages spec doc, and the maintainers' extension examples folder. The *conventions* there are authoritative.
+- The popular **`pi-package-template`** is **community-published (by s1m0n38), not official**. It's a convenient scaffold, not a blessed reference — and its CI/release scaffolding is the genuinely reusable part. Review third-party source before relying on it.
+- **Package scope naming**: the project moved from the original personal scope to the **`@earendil-works/*`** scope (the current install uses it). Match whatever scope the installed Pi CLI uses; older material may still reference the old names.
+
+## Security framing
+
+- Pi packages run with **full system access** — extensions execute arbitrary code, and skills can instruct the model to run anything. There's no built-in permission sandbox.
+- Users are told to review source before installing, so a clean public repo, clear README, and honest description help adoption.
