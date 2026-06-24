@@ -32,11 +32,20 @@ Conceptual outline for building and publishing packages for the Pi coding agent.
   - **vs. many separate repos**: shared tooling, one place to track everything, one CI/release setup — without losing the per-package catalog entries.
 - Keep core Pi packages in the **workspace-root dev dependencies** too, so local development resolves the same imports the published packages get at runtime.
 
-### Naming (decided)
+### Repo setup defaults
+
+- Use **npm workspaces** unless there is a specific reason to choose another package manager; Pi installs npm/git packages with `npm install`, so npm workspaces keep local development closest to installed behavior.
+- Keep the root `package.json` private and place publishable packages under `packages/*`.
+- Put package-specific runtime dependencies in each package's `dependencies`; put shared dev tooling and Pi core type packages in the workspace root `devDependencies`.
+- Give every publishable package a tight `files` list from the start: resource directories (`extensions`, `skills`, `prompts`, `themes`) plus README/docs/assets needed at runtime/catalog time.
+- Add `pi.image` or `pi.video` later when there is a meaningful preview for the catalog.
+
+### Naming
 
 - **Repo**: `pi-packages` on GitHub (private root, never published; name just mirrors `pi.dev/packages`).
-- **Packages**: scoped under my handle → `@me/pi-*` (e.g. `@me/pi-foo`). Scoping avoids global npm name collisions and keeps the set grouped; the `pi-` prefix signals the ecosystem at a glance.
-- The npm identity (`@me/pi-*`) is what actually appears in install commands and catalog entries — the repo name is just a human label.
+- **Packages**: scoped under the GitHub/npm username → `@jakeryderv/pi-*`.
+- **First package**: `@jakeryderv/pi-artifacts`.
+- The npm identity is what appears in install commands and catalog entries — the repo name is just a human label.
 
 ## Lifecycle
 

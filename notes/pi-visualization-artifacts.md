@@ -14,7 +14,7 @@ A design and build plan for a **Pi coding-agent extension** that lets the agent 
 - **Diagrams:** Mermaid (native, editable). Beyond Mermaid, embed a pre-rendered **SVG** via standard `![]()`.
 - **Storage:** each artifact is its own content-only directory (blank entry + `assets/` + manifest), created by a scaffold that writes no content — just structure, with shared capabilities provided by the viewer.
 - **Pi integration:** global session-aware store at `~/.pi/artifacts/`, the unified **session-reactive viewer** that live-updates as you switch sessions, and integrated export to any supported format.
-- **Validation gate on write:** `render_artifact` formats, lints, and parse-checks each bundle (autofix / warn / error), so authoring rules are enforced — not just documented — and the agent gets feedback before anything renders.
+- **Validation gate before render:** `render_artifact` formats, lints, and parse-checks the authored bundle before it is surfaced in the viewer (autofix / warn / error). The agent still writes files normally; validation gates rendering, not the original file edit.
 - **Data injection:** snapshot real data works now (agent fetches → `assets/`); live/real-time updating is a parked direction (viewer-brokered push, reusing the session-sync channel).
 - **Build order** is at the end, sequenced to get a usable surface early.
 
@@ -161,15 +161,15 @@ The authoring rules above are only advisory if the agent has to remember them. A
 
 ## Where it runs
 
-Inside `render_artifact`, before the write commits: **format → lint → parse-check → commit-or-return-feedback.** Three outcomes:
+Inside `render_artifact`, after the agent has authored files and before the viewer is updated: **format → lint → parse-check → surface-or-return-feedback.** Because the agent writes bundle files with its normal file tools, this gate does **not** prevent the original file edit. It can normalize/autofix the authored files and decide whether the artifact is valid enough to render.
 
 | Outcome | Effect | For |
 |---|---|---|
-| **Autofix** | Silently corrected, write proceeds | Formatting, normalization — no judgment needed |
-| **Warning** | Write proceeds, feedback returns to the agent | Portability risks, soft issues |
-| **Error** | Write blocked, feedback returns, agent revises | Syntax that genuinely won't render |
+| **Autofix** | Bundle files are silently normalized, then rendering proceeds | Formatting, normalization — no judgment needed |
+| **Warning** | Rendering proceeds, feedback returns to the agent | Portability risks, soft issues |
+| **Error** | Rendering is blocked, feedback returns, agent revises and re-renders | Syntax that genuinely won't render |
 
-This mirrors the compiler/test loop a coding agent already understands, so the feedback *teaches* within the session — surfacing the rule at the moment it's violated, not just patching output.
+This mirrors the compiler/test loop a coding agent already understands, so the feedback *teaches* within the session — surfacing the rule at the moment it blocks or degrades rendering, not just patching output.
 
 ## Why it matters more here
 
@@ -200,7 +200,7 @@ Each registered type declares its **formatter + linter + parse-check** alongside
 The risk is this becoming a slow CI pipeline, undercutting the minimum-complexity goal. Guardrails:
 
 - **Bias to autofix and warn.** Reserve hard errors for "will not render." Style nits never block.
-- **A gate, not a pipeline.** Run only the checks the bundle's type needs, in-process, on write. No watch mode, no config sprawl.
+- **A gate, not a pipeline.** Run only the checks the bundle's type needs, in-process, during `render_artifact`. No watch mode, no config sprawl.
 - **Opinionated defaults, minimal knobs.** Ship sensible configs; don't expose a surface to manage — same philosophy as the classless CSS base.
 
 ---
@@ -252,7 +252,8 @@ One small per-artifact manifest lets tooling handle any artifact without inspect
   "title": "Q4 Revenue Dashboard",
   "stack": "html",
   "entry": "index.html",
-  "session_id": "pi-session-abc123",
+  "sessionFile": "/home/me/.pi/agent/sessions/project/session.jsonl",
+  "sessionKey": "sha256-of-session-file-path",
   "cwd": "/home/me/project",
   "created": "2026-06-23"
 }
@@ -260,7 +261,7 @@ One small per-artifact manifest lets tooling handle any artifact without inspect
 
 - **`stack`** (`"markdown"` | `"html"`) → which rendering pipeline (and runtime, validator, export targets) to use.
 - **`entry`** → where to start rendering.
-- **`session_id` / `cwd`** → provenance, populated when running under Pi (see Pi integration). Empty/omitted when used standalone.
+- **`sessionFile` / `sessionKey` / `cwd`** → provenance, populated when running under Pi (see Pi integration). `sessionFile` comes from Pi's session manager when available; `sessionKey` is a stable derived key used for filtering without depending on an undocumented `session_id`. Empty/omitted when used standalone.
 - Plus metadata (`title`, `created`) for listing, lifecycle, and cleanup.
 - *(A `vendored` list can be added only by the rare artifact that pulls in a library outside the shared runtime.)*
 
@@ -281,11 +282,11 @@ Target host: the **Pi coding agent** — a minimal terminal (TUI) harness, exten
 The system ships as a Pi extension — a default factory `export default function (pi: ExtensionAPI)` — that registers:
 
 - **Tools** the agent calls: `scaffold_artifact` (create an empty bundle) and `render_artifact` (validate + surface it in the viewer).
-- A **command** (e.g. `/viewer`) to launch the persistent, session-reactive viewer window.
-- **Session-event subscriptions** (`session_start`, session-replacement on `/resume`) that drive live updates.
+- A **command** (e.g. `/viewer`) to launch the viewer surface.
+- **Session-event subscriptions** (`session_start`, and replacement flows such as `/resume`) that eventually drive live updates.
 - Terminal feedback via `ctx.ui.notify` / `ctx.ui.setStatus`.
 
-Node built-ins (`node:fs`, `node:path`, `child_process`) cover storage and export with no dependencies. The viewer takes **one deliberate dependency** — a webview runtime — for its bidirectional channel. Config lives in `~/.pi/agent/settings.json`.
+Node built-ins (`node:fs`, `node:path`, `child_process`) cover storage and export with no dependencies. The viewer likely takes **one deliberate dependency** — a webview runtime — for its bidirectional channel, but the concrete viewer primitive is an early spike rather than a settled implementation detail. Config lives in `~/.pi/agent/settings.json`.
 
 ### The tool interface
 
@@ -310,17 +311,18 @@ The flow: `scaffold_artifact` → agent writes content into the blank entry → 
 
 Pi centralizes its state under `~/.pi/`, so the artifact store lives there too — global, not per-project: `~/.pi/artifacts/<artifact-id>/`. This global store is the **source of truth**: one place to browse every artifact across all projects, with natural dedup. The manifest's provenance fields make global storage still feel local:
 
-- **`session_id`** is the **live join key** — the viewer filters to the active session's artifacts and re-renders when the session changes.
+- **`sessionKey`** is the **live join key** — the viewer filters to the active session's artifacts and re-renders when the session changes. It should be derived from the Pi session file path exposed by `ctx.sessionManager.getSessionFile()` rather than assuming an undocumented built-in session id.
+- **`sessionFile`** is retained as provenance/debug metadata when available.
 - **`cwd`** ties an artifact to the project that made it without scattering files into every repo.
 - **Optional local access** — an opt-in pointer (`./.pi-artifacts → ~/.pi/artifacts`) gives relative-path access from the running project. Symlinks are awkward on Windows, so this is sugar, not the foundation.
 
 ## Rendering surface: a unified, session-reactive viewer
 
-A TUI can't render HTML, so artifacts open in a **persistent webview window** — one companion that launches once (`/viewer`), stays open across renders and session switches, and tracks Pi's current session live.
+A TUI can't render HTML, so artifacts need an external rendering surface. The target experience is a **persistent, session-reactive viewer** — one companion launched by `/viewer`, showing the current session's artifacts and updating as renders/session switches happen. However, persistence across Pi session replacement (`/resume`, `/new`, `/fork`) is a lifecycle-sensitive feature: Pi tears down and rebinds extension instances during those flows, so the first implementation should not assume a long-lived window survives correctly until that behavior is verified.
 
-It's a **unified gallery**, not a per-artifact popup: a list of every artifact in the active session on one side, the selected artifact rendered in the main pane on the other, with export controls. Crucially, the gallery is **type-agnostic** — it renders markdown artifacts through the markdown-it pipeline and html artifacts directly, both ending up as HTML in the same webview. So you switch between *any* artifact type instantly in one place, and the same surface absorbs new types as they're added.
+It's a **unified gallery**, not a per-artifact popup: a list of every artifact in the active session on one side, the selected artifact rendered in the main pane on the other, with export controls. Crucially, the gallery is **type-agnostic** — it renders markdown artifacts through the markdown-it pipeline and html artifacts directly, both ending up as HTML in the same surface. So you switch between *any* artifact type instantly in one place, and the same surface absorbs new types as they're added.
 
-This is a webview rather than a local-server-plus-browser because the core requirement is **push, not pull**. The viewer must update when Pi's *state* changes (the user switches sessions; the agent renders a new artifact) — Pi initiates, the window reacts. A plain HTTP server is pull-only and would need a websocket layer bolted on to fake that channel. A webview provides bidirectional host↔window JSON natively, so it's the right primitive. The cost is one dependency (the webview runtime) and managing a long-lived window + message channel.
+The preferred direction is still a bidirectional webview because the core requirement is **push, not pull**: Pi should be able to push viewer updates when state changes. But the viewer runtime is an early technical spike, not a foregone conclusion. Compare a Pi/native webview package, a general webview binding, and a small local server plus browser with WebSocket/SSE. If the server/browser route is simpler and reliable enough, it may be a better MVP path even if the final target remains a webview.
 
 ### The live-sync model
 
@@ -335,12 +337,12 @@ This is a webview rather than a local-server-plus-browser because the core requi
   user clicks an artifact ◄────────── opens it / sends an action back to the agent
 ```
 
-1. `/viewer` launches the window once; it persists for the run.
-2. On `session_start` / session-replacement, the handler queries the store for artifacts whose `session_id` matches the now-active session and **pushes the filtered list** into the window.
-3. The window re-renders — no relaunch, no manual refresh. Switch session in the terminal, the companion follows.
+1. `/viewer` launches the surface. MVP may relaunch/reconnect manually; the target is one companion that persists for the run.
+2. On `session_start` / session-replacement, the handler computes the active `sessionKey`, queries the store for matching artifacts, and **pushes the filtered list** into the viewer.
+3. Once persistence is proven, the window re-renders — no relaunch, no manual refresh. Switch session in the terminal, the companion follows.
 4. The channel is bidirectional: a click can **send an action back to the agent** (e.g. expand a node → ask the agent to elaborate), which display-only surfaces can't do.
 
-A direct file open (`open` / `xdg-open` / `start` over `file://`) remains as a zero-dependency fallback for previewing a single static bundle — no live sync, and `file://` blocks local `fetch()`.
+A direct file open (`open` / `xdg-open` / `start` over `file://`) can remain as an optional fallback for simple static bundles, but the MVP preview path should use a tiny local server from day one. That avoids `file://` restrictions around `fetch("assets/data.json")`, better matches the eventual viewer architecture, and gives a clear place to enforce local-only/offline access.
 
 ## Export: a viewer capability, any supported format
 
@@ -391,7 +393,7 @@ A concrete pass through the whole loop, to ground the pieces — the agent build
 
 ```
 ~/.pi/artifacts/q4-revenue/
-  manifest.json        (stack: "html", entry: "index.html", session_id, cwd…)
+  manifest.json        (stack: "html", entry: "index.html", sessionKey/sessionFile, cwd…)
   index.html           (blank)
   assets/
 ```
@@ -441,30 +443,32 @@ A build order that gets a usable surface early, then layers on reactive and expo
 | **Markdown renderer** | markdown-it pipeline + Mermaid/KaTeX (shared, in the viewer) | — |
 | **html runtime** | Shared generated-UI kit: semantic CSS base, Alpine, charting lib, icons (installed, served by viewer) | — |
 | **Authoring guide** | Pi skill telling the agent how to use the html runtime — the enabler that makes it low-effort | html runtime |
-| **Bundle store** | Read/write `~/.pi/artifacts/<id>/`, manifests with `session_id`/`cwd` | `node:fs`, `node:path` |
+| **Bundle store** | Read/write `~/.pi/artifacts/<id>/`, manifests with `sessionKey`/`sessionFile`/`cwd` | `node:fs`, `node:path` |
 | **`scaffold_artifact` tool** | Agent-callable: create empty bundle (manifest + blank entry + `assets/`), return `{id, path, entry}` | Scaffolds, store |
 | **`render_artifact` tool** | Agent-callable: validate the authored bundle → render/update in viewer (same `id` = in place) → return feedback | renderers, store, validation gate |
-| **Validation gate** | format → lint → parse-check on write; autofix / warn / error, feedback to the agent | renderers, registry |
+| **Validation gate** | format → lint → parse-check during `render_artifact`; autofix / warn / error, feedback to the agent | renderers, registry |
 | **Scaffolds** | Per-type empty-bundle spec; one per type, no content | renderers |
 | **Renderer registry** | Maps each `stack` value to a renderer, validator, + export targets — the extension point for new types | — |
-| **Unified viewer** | Persistent window: session-scoped list, renders any type via the registry, export controls | webview runtime, store, registry |
-| **Session sync** | Subscribe to `session_start` / replacement → push filtered list | Viewer, store |
+| **Unified viewer** | External surface: session-scoped list, renders any type via the registry, export controls; persistent window is the target after lifecycle spike | viewer runtime, store, registry |
+| **Session sync** | Subscribe to `session_start` / replacement → compute `sessionKey` → push filtered list | Viewer, store |
 | **Export** | Inline shared runtime + content into a format the renderer declares | Store, registry |
 
 ## Phases
 
-1. **Runtimes + store + tools + gate (no UI).** Stand up the markdown renderer and the shared html runtime (CSS base, Alpine, charts, icons) plus its authoring guide; implement the bundle store, `scaffold_artifact`, and `render_artifact` with the validation gate (start with Prettier autofix + Mermaid/KaTeX parse-checks; custom tier/runtime-checks as a fast-follow). Verify content-only bundles land in `~/.pi/artifacts/` with correct manifests, validated and rendered against the shared runtime. Inspect with a plain `file://` open. Proves the core loop without surface work.
-2. **Static viewer.** Add the `/viewer` webview showing the full artifact list and rendering a selected bundle via the renderer registry. No live sync yet — manual refresh is fine. Confirms the webview runtime, window lifecycle, and registry-driven rendering of both types.
-3. **Session sync.** Wire `session_start` / session-replacement events to push the `session_id`-filtered list into the open window. Delivers the reactive behavior: switch session → list updates.
+1. **Runtimes + store + tools + gate + local preview server (no full UI).** Stand up the markdown renderer and the shared html runtime (CSS base, Alpine, charts, icons) plus its authoring guide; implement the bundle store, `scaffold_artifact`, and `render_artifact` with the validation gate (start with Prettier autofix + Mermaid/KaTeX parse-checks; custom tier/runtime-checks as a fast-follow). Verify content-only bundles land in `~/.pi/artifacts/` with correct manifests, validated and rendered against the shared runtime. Serve previews through a tiny localhost server from day one, scoped to the selected artifact directory plus package runtime files; this avoids `file://` asset-fetch limitations and starts the security boundary early. Proves the core loop without full viewer work.
+2. **Static viewer.** Add the `/viewer` surface showing the full artifact list and rendering a selected bundle via the renderer registry. No live sync yet — manual refresh is fine. Confirms the chosen viewer runtime, window/process lifecycle, and registry-driven rendering of both types.
+3. **Session sync.** Wire `session_start` / session-replacement events to compute the active `sessionKey` and push the filtered list into the open viewer. Delivers the reactive behavior: switch session → list updates.
 4. **Bidirectional actions.** Add the window→agent channel so a click sends an action back (open, expand, regenerate). Turns the viewer from display-only into interactive. *(Has real design uncertainty — define the action protocol here, don't assume it's just wiring.)*
 5. **Export.** Add single-file export (inlined HTML first, then PDF / md).
 
 ## Open decisions
 
-- **Webview runtime choice** — the Pi WebView package vs. a general binding (e.g. Tauri / a `webview` lib). Trades integration depth against footprint and cross-platform behavior.
-- **Window lifecycle** — re-open cleanly if the user closes it; tear down on Pi exit. One window persisting across sessions (recommended) vs. one per session.
+- **Viewer runtime choice** — spike the available options before committing: a Pi/native webview package if one exists, a general binding (e.g. Tauri / a `webview` lib), or local server + browser + WebSocket/SSE. Trades integration depth, footprint, install friction, and cross-platform behavior.
+- **Window/process lifecycle** — re-open cleanly if the user closes it; tear down on Pi exit. Persistent across sessions is the target, but Pi session replacement tears down/rebinds extension instances, so first prove whether a singleton companion can survive `/resume`, `/new`, and `/fork` safely. Fall back to session-scoped/manual relaunch for MVP if needed.
+- **Session identity** — use Pi-exposed session state, likely `ctx.sessionManager.getSessionFile()`, and derive `sessionKey` from it. Avoid depending on an undocumented `session_id` until the API/source confirms one exists.
 - **Pin the Pi extension API** against current docs — `registerTool` parameter shape and exact session-lifecycle event names are evolving; verify before coding.
 - **Shared-runtime versioning** — pin the curated runtime (CSS base, Alpine, charts, icons) and refresh deliberately; one version serves all artifacts, so a bump re-renders existing ones. The rare per-artifact vendored library (the escape hatch) is pinned within that bundle.
+- **MVP preview transport** — use a tiny local preview server from day one. It should serve only the selected artifact directory and package runtime files, reject path traversal, bind to localhost, and avoid any external-network proxying by default.
 - **Lifecycle / cleanup** — the global store grows unbounded. Decide retention: keep-forever with a manual `/artifacts clear`, age-based eviction, or per-session pruning on session end. `created` (and a possible `last_rendered`) in the manifest support whatever policy is chosen.
-- **Trust / security** — html artifacts execute agent-generated JS in the webview. This sits within the same trust model as a coding agent that already runs code, but the posture should be explicit: scope the webview to local artifact files, decide whether artifacts may reach the network, and inherit Pi's project-trust gating before rendering untrusted bundles.
+- **Trust / security** — html artifacts execute agent-generated markup/JS in the viewer. This sits near the same trust model as a coding agent that already runs code, but the posture should be explicit before the viewer is built: render artifacts in a sandboxed iframe or equivalent isolation, avoid Node integration in rendered content, set a restrictive CSP, scope file access to the artifact directory, keep artifacts offline/local-only by default, define how per-artifact vendored JS is reviewed/loaded, and inherit Pi's project-trust gating before auto-rendering untrusted bundles.
 - **Live data** — snapshot data works today (agent fetches → `assets/`). Real-time updating needs a new capability: Option C (viewer-brokered push over the session-sync channel) is the front-runner, with A/B as simpler fallbacks. It pressures self-containment, export, and security. Parked until needed — see Data injection.
