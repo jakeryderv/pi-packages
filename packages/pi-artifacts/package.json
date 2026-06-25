@@ -1,0 +1,30 @@
+{
+  "name": "@jakeryderv/pi-artifacts",
+  "version": "0.0.0",
+  "description": "Rich visualization artifacts for the Pi coding agent: scaffold, validate, and preview markdown/html artifact bundles.",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "pi-package"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions"
+    ],
+    "skills": [
+      "./skills"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "files": [
+    "extensions",
+    "skills",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

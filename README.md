@@ -1,9 +1,35 @@
 # pi-packages
 
-Packages for the Pi coding agent: <https://pi.dev/>.
+Monorepo of packages for the [Pi coding agent](https://pi.dev/). The repo root is
+private and never published; each package under `packages/*` publishes
+independently to npm with its own catalog entry.
 
-## Notes
+## Packages
 
-- [Monorepo/package reference notes](notes/pi-packages-notes.md)
-- [Visualization artifacts design notes](notes/pi-visualization-artifacts.md)
-- [Visualization artifacts roadmap](docs/visualization-artifacts-roadmap.md)
+| Package | npm | Status |
+| --- | --- | --- |
+| [`pi-artifacts`](packages/pi-artifacts) | `@jakeryderv/pi-artifacts` | scaffold |
+
+## Documentation layout
+
+Docs are co-located with their scope. Repo-level material lives at the root;
+package-specific material lives inside the package. Within either scope, settled
+docs sit in `docs/` and exploratory/thinking notes sit in `docs/notes/`.
+
+- **Repo-level**
+  - [Packaging & monorepo reference notes](docs/notes/packaging.md)
+- **Package-level** (example: `pi-artifacts`)
+  - [Roadmap](packages/pi-artifacts/docs/roadmap.md)
+  - [Design notes](packages/pi-artifacts/docs/notes/design.md)
+  - [Package README](packages/pi-artifacts/README.md) (the only doc that ships to npm)
+
+Conventions for doc placement, dev workflow, and packaging live in
+[`AGENTS.md`](AGENTS.md).
+
+## Development
+
+```bash
+npm install                                   # install the workspace
+npm run typecheck                             # tsc --noEmit across packages
+pi -e /abs/path/to/packages/<pkg>             # load a package for one run (test from a temp dir)
+```

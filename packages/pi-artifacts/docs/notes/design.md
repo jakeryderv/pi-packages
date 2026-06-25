@@ -461,7 +461,7 @@ A build order that gets a usable surface early, then layers on reactive and expo
 
 ## Phases
 
-> The MVP (Phase 1) is split **markdown-first**, then **html**, to derisk everything structural before the heavier shared-runtime-injection work. See the [roadmap](../docs/visualization-artifacts-roadmap.md) for the authoritative, sequenced build order.
+> The MVP (Phase 1) is split **markdown-first**, then **html**, to derisk everything structural before the heavier shared-runtime-injection work. See the [roadmap](../roadmap.md) for the authoritative, sequenced build order.
 
 1. **MVP-1 — markdown-only core loop (no full UI).** Stand up the markdown renderer plus its authoring guide; implement the bundle store, `scaffold_artifact`, and `render_artifact` with the validation gate (Prettier autofix + markdownlint + KaTeX strict; Mermaid parse-check gated behind the headless-Node feasibility spike, warn-only/skipped if it can't run; custom tier-check as a fast-follow). Verify content-only markdown bundles land in `~/.pi/artifacts/` with correct manifests, validated and rendered. Serve previews through a tiny localhost server from day one — scoped to the selected artifact directory plus package runtime files, with a baseline restrictive CSP — which avoids `file://` asset-fetch limitations and starts the security boundary early. Proves the core loop without full viewer work or any html-runtime weight.
 2. **MVP-2 — html stack.** Add the shared html runtime (CSS base, Alpine, charts, icons) injected at render time, its authoring guide, and the html validation gate (Prettier + HTMLHint + runtime-check). Confirm the baseline CSP holds for runtime-injected JS. Brings up the dynamic-UI lane on the proven core loop.

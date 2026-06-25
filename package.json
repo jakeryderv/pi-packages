@@ -1,0 +1,24 @@
+{
+  "name": "pi-packages",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Monorepo of packages for the Pi coding agent.",
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint:md": "markdownlint-cli2 \"**/*.md\" \"#**/node_modules\""
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.80.2",
+    "@types/node": "^22.10.0",
+    "markdownlint-cli2": "^0.18.1",
+    "prettier": "^3.6.2",
+    "typebox": "^1.1.38",
+    "typescript": "^5.9.2"
+  }
+}

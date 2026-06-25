@@ -1,0 +1,12 @@
+node_modules/
+*.log
+.DS_Store
+
+# project pi resources: keep settings.json, ignore generated installs
+.pi/npm/
+.pi/git/
+
+# build / tooling caches
+dist/
+.cache/
+*.tsbuildinfo

@@ -20,8 +20,9 @@ Conceptual outline for building and publishing packages for the Pi coding agent.
 
 - **Pi core packages** → declared as **peer dependencies** (wildcard range), never bundled. Pi provides them at runtime.
 - **Third-party runtime deps** → normal dependencies. Pi installs them automatically on package install.
-- **Depending on another Pi package** is the exception → must be bundled, not peered.
-- The "files" list controls what actually ships in the npm tarball: resource dirs + docs only.
+- **Runtime deps must be in `dependencies`, never `devDependencies`.** Package installs run `npm install --omit=dev`, so `devDependencies` are not present at runtime. Anything an extension imports when it runs (validation/format/lint libs, runtime libs) belongs in `dependencies`. The same formatters/linters used only to lint this repo's own sources can stay in the workspace-root `devDependencies` — a separate concern.
+- **Depending on another Pi package** is the exception → must be bundled (`dependencies` + `bundledDependencies`), not peered.
+- The "files" list controls what actually ships in the npm tarball: resource dirs + README only (internal `docs/` stay out of the tarball).
 
 ## Monorepo strategy (the chosen approach)
 
@@ -39,6 +40,14 @@ Conceptual outline for building and publishing packages for the Pi coding agent.
 - Put package-specific runtime dependencies in each package's `dependencies`; put shared dev tooling and Pi core type packages in the workspace root `devDependencies`.
 - Give every publishable package a tight `files` list from the start: resource directories (`extensions`, `skills`, `prompts`, `themes`) plus README/docs/assets needed at runtime/catalog time.
 - Add `pi.image` or `pi.video` later when there is a meaningful preview for the catalog.
+
+### Extension conventions (cross-cutting)
+
+Conventions that apply to every extension-bearing package in this repo, verified against the Pi docs:
+
+- **No background work in the extension factory.** Pi may run the factory in invocations that never start a session, so do not start sockets/servers/file-watchers/timers there. Start session-scoped resources in `session_start` (or lazily on first use) and tear them down in an **idempotent `session_shutdown`** handler.
+- **Rebrand-safe paths.** Pi's config dir name is configurable (`CONFIG_DIR_NAME`, default `.pi`; forks rename it). Derive any `~/.pi/...` path as `join(os.homedir(), CONFIG_DIR_NAME, ...)` instead of hardcoding `.pi`. `CONFIG_DIR_NAME` is exported from `@earendil-works/pi-coding-agent`.
+- **Peer imports.** Importing any Pi core package (`@earendil-works/pi-coding-agent`, `pi-ai`, `pi-agent-core`, `pi-tui`) or `typebox` → declare it in `peerDependencies` with `"*"`. Pi provides these at runtime; declare only the ones actually imported.
 
 ### Naming
 
