@@ -12,6 +12,31 @@ interactive html stack next — in a session-scoped viewer.
 > and [design notes](https://github.com/jakeryderv/pi-packages/blob/main/packages/pi-artifacts/docs/notes/design.md)
 > for the broader plan.
 
+## Install
+
+```bash
+pi install npm:@jakeryderv/pi-artifacts
+```
+
+To try it for a single run without adding it to your Pi settings:
+
+```bash
+pi -e npm:@jakeryderv/pi-artifacts
+```
+
+## Quickstart
+
+After installing or loading the package, ask Pi to create and render an artifact:
+
+```text
+Create a markdown artifact titled "Demo Report" with a heading, a short note callout, a task list, and a small table. Then render it.
+```
+
+Pi will scaffold a bundle, write the markdown entry file, validate it, and return
+a localhost preview URL. Run `/viewer` to open the artifact gallery, then use
+`list_artifacts` or `delete_artifact` when you want to inspect or clean up saved
+bundles.
+
 ## What it provides
 
 - **`scaffold_artifact`** tool — create an empty markdown artifact bundle to author into.

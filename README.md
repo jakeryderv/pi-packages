@@ -6,9 +6,9 @@ independently to npm with its own catalog entry.
 
 ## Packages
 
-| Package                                 | npm                        | Status   |
-| --------------------------------------- | -------------------------- | -------- |
-| [`pi-artifacts`](packages/pi-artifacts) | `@jakeryderv/pi-artifacts` | scaffold |
+| Package                                 | npm                        | Status                       |
+| --------------------------------------- | -------------------------- | ---------------------------- |
+| [`pi-artifacts`](packages/pi-artifacts) | `@jakeryderv/pi-artifacts` | markdown MVP + static viewer |
 
 ## Documentation layout
 
