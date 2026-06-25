@@ -1,7 +1,10 @@
 # pi-artifacts Implementation Plan
 
-Status: MVP-1 (markdown loop) and the static viewer are complete and preflighted.
-This document now tracks the forward roadmap after that milestone.
+Status: MVP-1 (markdown loop) + static viewer are complete, preflighted, and
+**published as `@jakeryderv/pi-artifacts@0.1.0`** (npm, public; git tag
+`pi-artifacts-v0.1.0`). This document tracks the forward roadmap.
+
+**Next task: Phase C, Pass 1 — the minimal html vertical slice (see below).**
 
 ## Completed — MVP-1 + static viewer
 
@@ -24,7 +27,7 @@ Deferred by choice: Mermaid diagram rendering and headless Mermaid validation
 
 ## Forward plan (ordered)
 
-Recommended order: A → B (optional) → C → D → E → F.
+Recommended order: A (done) → B (done, 0.1.0) → C (next) → D → E → F.
 Settled decision: build the html lane (C) before session-reactive sync (D) so the
 reactive viewer is built once against both artifact types.
 
@@ -71,22 +74,60 @@ Low risk, high daily value. Contained to existing modules.
 5. Robustness: empty store and bad bundles are skipped by `listArtifacts`; the
    gallery reads from disk so deletes/edits reflect immediately. DONE.
 
-### Phase B — First real publish (milestone, optional timing)
+### Phase B — First real publish (DONE)
 
-Cut `0.1.0` so `pi update` propagates and it is installable as a catalog package.
-Run full preflight + `npm pack --dry-run` content check first.
+Published `@jakeryderv/pi-artifacts@0.1.0` to npm (public). Release polish landed
+in the same pass: package metadata (`repository`/`bugs`/`homepage`, expanded
+`keywords`, `author`), README Install/Quickstart, bundled `LICENSE` (added to
+`files`), root README status updated. Git tag `pi-artifacts-v0.1.0` pushed.
+Future publishes: scope-level granular npm token on `@jakeryderv` (read/write,
+bypass 2FA) covers every package in this monorepo.
 
 ### Phase C — MVP-2: html stack
 
-1. `scaffold_artifact` accepts `type: "html"` → blank `index.html` + `assets/`.
-2. Shared html runtime injected at render time (semantic CSS base, Alpine,
-   one charting lib, icons), served from `/runtime`, never vendored per bundle.
-3. html validation gate (Prettier + HTMLHint or similar + runtime-capability check).
-4. html authoring skill.
-5. Make the deliberate CSP decision for runtime-injected JS.
+Do this in two passes. **Pass 1 is the next task**: prove `stack: "html"` plugs
+into the existing store/server/tools end-to-end with a trivial renderer — before
+any shared runtime, validation gate, or CSP-for-JS decisions. Defer the heavier
+work (Pass 2 below) until the slice is green.
 
-Constraint: respect the decoupling invariants above so the eventual reactive
-surface (browser SSE vs. webview) stays a late, cheap decision.
+#### Pass 1 — minimal html vertical slice (NEXT)
+
+Goal: scaffold → author `index.html` → render → preview → list/delete, all
+working for html, with the smallest possible html render path. No Alpine, no
+charts, no icons, no injected JS yet.
+
+1. Allow `"html"` as a `stack`/`type`. Touch `extensions/types.ts` (stack union)
+   and `extensions/manifest.ts` (`isArtifactManifest` accepts `"html"`,
+   `entry` may be `index.html`). Keep `"markdown"` behavior identical.
+2. `scaffold_artifact({ type: "html", title })` → bundle with `manifest.json`
+   (`stack: "html"`, `entry: "index.html"`) + blank `index.html` + `assets/`.
+   Reuse the existing scaffold/collision/store logic; only the entry filename
+   and stack differ. (See `extensions/store.ts`, `extensions/slug.ts`.)
+3. Add a minimal html render path. Mirror `extensions/markdown.ts` /
+   `extensions/validation/markdown.ts` with an html equivalent that, for now,
+   just wraps/serves the authored `index.html` body in the page shell (same
+   `<head>`/CSP wrapper the markdown renderer uses). `render_artifact` routes on
+   `manifest.stack`: `"markdown"` → existing path, `"html"` → new path.
+4. Serve html previews through the existing localhost server unchanged — same
+   localhost bind, per-artifact scope, traversal rejection, baseline CSP. No new
+   server surface. (See `extensions/server.ts`.)
+5. Tests: scaffold/render/list/delete for html bundles, plus the existing
+   markdown tests still pass. Keep the markdown↔html branch logic covered.
+
+Respect the decoupling invariants above: the html path stays HTTP-served HTML +
+assets, with no browser-only assumptions, so the browser↔webview choice stays
+cheap to defer.
+
+#### Pass 2 — shared runtime + gate + skill (after Pass 1 is green)
+
+1. Shared html runtime injected at render time (semantic CSS base, Alpine,
+   one charting lib, icons), served from `/runtime`, never vendored per bundle.
+2. html validation gate (Prettier + HTMLHint or similar + runtime-capability check).
+3. html authoring skill.
+4. Make the deliberate CSP decision for runtime-injected JS (Alpine/charts
+   execute in the browser surface — this is the first point html is meaningfully
+   more dangerous than markdown; settle sandbox/CSP posture before injecting JS).
+5. Bump a minor version and re-publish once the runtime lane is usable.
 
 ### Phase D pre-gate — Viewer runtime spike (research only)
 
