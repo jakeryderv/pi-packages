@@ -16,9 +16,9 @@ publishes to npm independently under `@jakeryderv/pi-*` with its own catalog ent
 
 ## Package conventions
 
-- npm workspaces. Root `package.json` is `private`. Each package: `keywords:
-  ["pi-package"]`, a `pi` manifest, and a tight `files` list (resource dirs +
-  README only).
+- npm workspaces. Root `package.json` is `private`. Each package declares the
+  `pi-package` keyword, a `pi` manifest, and a tight `files` list (resource
+  dirs + README only).
 - **Peer deps** `"*"` for Pi core imports (`@earendil-works/pi-*`) and `typebox`;
   declare only what is actually imported. Pi provides them at runtime.
 - **Runtime deps go in `dependencies`** — package installs run

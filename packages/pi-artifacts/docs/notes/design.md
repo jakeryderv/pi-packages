@@ -3,7 +3,7 @@
 A design and build plan for a **Pi coding-agent extension** that lets the agent produce rich, visual artifacts — documents, diagrams, charts, and interactive UIs — rendered in a session-reactive viewer and stored as isolated, portable bundles.
 
 > [!NOTE]
-> The **viewer is the unifying surface**: it renders every artifact type, lets you switch between any artifact present in one place, and exports any of them to supported formats. The "stacks" below (markdown, html) are just the artifact *types* the viewer handles today — the set is designed to grow. Cross-renderer portability (Obsidian / GitHub) is a bonus property of markdown artifacts, not a wall between types.
+> The **viewer is the unifying surface**: it renders every artifact type, lets you switch between any artifact present in one place, and exports any of them to supported formats. The "stacks" below (markdown, html) are just the artifact _types_ the viewer handles today — the set is designed to grow. Cross-renderer portability (Obsidian / GitHub) is a bonus property of markdown artifacts, not a wall between types.
 
 ## At a glance
 
@@ -22,24 +22,24 @@ A design and build plan for a **Pi coding-agent extension** that lets the agent 
 
 # Architecture: one viewer, pluggable artifact types
 
-The centerpiece is a **unified viewer** that renders every artifact regardless of type, lets you switch between any artifact present in one place, and exports any of them to supported formats. Artifact *types* are pluggable behind it — each type is a self-contained bundle plus a renderer the viewer knows how to display.
+The centerpiece is a **unified viewer** that renders every artifact regardless of type, lets you switch between any artifact present in one place, and exports any of them to supported formats. Artifact _types_ are pluggable behind it — each type is a self-contained bundle plus a renderer the viewer knows how to display.
 
 Two types exist today, chosen by output shape:
 
-| Type (`stack`) | Entry | Scope | Picks it for |
-|---|---|---|---|
-| **markdown** | `index.md` | Enriched markdown — prose, math, tables, Mermaid, embedded SVG | Document/note lane; also portable to Obsidian/GitHub |
-| **html** | `index.html` | Generated UI on a shared runtime (semantic CSS, Alpine, charts, icons), no build step | Dynamic-UI lane; dashboards, tools, forms, bespoke views |
+| Type (`stack`) | Entry        | Scope                                                                                 | Picks it for                                             |
+| -------------- | ------------ | ------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| **markdown**   | `index.md`   | Enriched markdown — prose, math, tables, Mermaid, embedded SVG                        | Document/note lane; also portable to Obsidian/GitHub     |
+| **html**       | `index.html` | Generated UI on a shared runtime (semantic CSS, Alpine, charts, icons), no build step | Dynamic-UI lane; dashboards, tools, forms, bespoke views |
 
-*("Type" and "stack" are used interchangeably throughout; `stack` is the manifest field name, "type" the concept.)*
+_("Type" and "stack" are used interchangeably throughout; `stack` is the manifest field name, "type" the concept.)_
 
-The split mirrors a single question — **is the output something to read, or something to operate?** Reading → markdown; operating → html. But both are first-class citizens in the *same* viewer; the distinction is the renderer behind the bundle, not a separate tool. The `stack` field in the manifest is the **extension point**: adding a new type later (say, a notebook or a 3D scene) means registering a renderer, a validator, and export targets for a new `stack` value — storage, the viewer shell, session-sync, the validation gate, and export stay unchanged.
+The split mirrors a single question — **is the output something to read, or something to operate?** Reading → markdown; operating → html. But both are first-class citizens in the _same_ viewer; the distinction is the renderer behind the bundle, not a separate tool. The `stack` field in the manifest is the **extension point**: adding a new type later (say, a notebook or a 3D scene) means registering a renderer, a validator, and export targets for a new `stack` value — storage, the viewer shell, session-sync, the validation gate, and export stay unchanged.
 
 ---
 
 # The markdown stack: portable documents
 
-Author **portable enriched markdown** — plain `.md` files that render consistently across markdown-it, Obsidian, and GitHub. A `.md` file is portable as plain text, but rich rendering comes from the *renderer*, not the file — so "portable" means restricting authoring to syntax all three renderers agree on. Cross-renderer breakage comes mainly from custom HTML/CSS styling; when the goal is visualization rather than styling, that conflict doesn't arise.
+Author **portable enriched markdown** — plain `.md` files that render consistently across markdown-it, Obsidian, and GitHub. A `.md` file is portable as plain text, but rich rendering comes from the _renderer_, not the file — so "portable" means restricting authoring to syntax all three renderers agree on. Cross-renderer breakage comes mainly from custom HTML/CSS styling; when the goal is visualization rather than styling, that conflict doesn't arise.
 
 ## Compatibility tiers
 
@@ -90,9 +90,9 @@ Image embedding is Tier 1, the most universal syntax there is. Any tool can gene
 
 The decision rule:
 
-| Need | Approach |
-|---|---|
-| Fits within Mermaid's diagram types | Mermaid block — native, editable, portable |
+| Need                                 | Approach                                            |
+| ------------------------------------ | --------------------------------------------------- |
+| Fits within Mermaid's diagram types  | Mermaid block — native, editable, portable          |
 | Exceeds Mermaid (charts, custom viz) | Pre-rendered SVG via `![]()` — portable, but static |
 
 **The one unavoidable tradeoff:** a pre-rendered image is static and not editable-as-text the way a Mermaid block is. A visualization that is rich-beyond-Mermaid, live-editable-as-text, **and** portable across all three renderers at once is not achievable — that's a constraint of the medium, not something a different tool fixes. When live editability and richness both matter more than portability, that's the signal to use the html stack instead.
@@ -111,12 +111,12 @@ Two foundations still hold: **no build step** (avoid JSX and bundlers; the brows
 
 A small, opinionated kit — installed with the package, served by the viewer — prioritized by how much agent effort it removes:
 
-| Capability | Tool (example) | Why it earns its place |
-|---|---|---|
-| **Semantic CSS base** | Pico.css (classless) | Biggest single win — agent writes plain `<article>`, `<button>`, `<table>` and gets polished UI with **zero class names or styling decisions**. Nothing to remember. |
-| **Declarative interactivity** | Alpine (~45kb) | State, binding, events as markup directives (`x-data`, `@click`) — no imperative DOM code. |
-| **Charts** | Vega-Lite (JSON spec) | Breaks the Mermaid ceiling on the html side. A pure declarative spec — consistent with "declarative lowers agent error." Chart.js is the lighter, config-object alternative. |
-| **Icons** | Lucide (SVG sprite) | Clean icons dropped in by name; no asset hunting. |
+| Capability                    | Tool (example)        | Why it earns its place                                                                                                                                                       |
+| ----------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Semantic CSS base**         | Pico.css (classless)  | Biggest single win — agent writes plain `<article>`, `<button>`, `<table>` and gets polished UI with **zero class names or styling decisions**. Nothing to remember.         |
+| **Declarative interactivity** | Alpine (~45kb)        | State, binding, events as markup directives (`x-data`, `@click`) — no imperative DOM code.                                                                                   |
+| **Charts**                    | Vega-Lite (JSON spec) | Breaks the Mermaid ceiling on the html side. A pure declarative spec — consistent with "declarative lowers agent error." Chart.js is the lighter, config-object alternative. |
+| **Icons**                     | Lucide (SVG sprite)   | Clean icons dropped in by name; no asset hunting.                                                                                                                            |
 
 That's the whole kit: **semantic CSS + Alpine + one charting lib + icons** — covering the vast majority of generated UI without a build step. A class-based component layer can sit on top of the classless base for the cases that need more control.
 
@@ -140,21 +140,21 @@ The agent initializes an artifact from a **scaffold** — and a scaffold deliber
 
 This is a deliberate choice against pre-filled templates. A skeleton with a demo counter or chart scaffold creates **gravitational pull** — the agent tends to produce something shaped like the skeleton rather than building from the actual need, which is the opposite of maximum flexibility. A blank entry with a known toolbox avoids the anchor.
 
-There is **one scaffold per type, no variants** — and the html scaffold is the *same shape* as the markdown one:
+There is **one scaffold per type, no variants** — and the html scaffold is the _same shape_ as the markdown one:
 
-| | markdown scaffold | html scaffold |
-|---|---|---|
-| `manifest.json` | ✓ | ✓ |
-| blank entry | `index.md` | `index.html` |
-| `assets/` | ✓ | ✓ |
-| Runtime | injected by the viewer (markdown-it / KaTeX / Mermaid) | injected by the viewer (CSS base / Alpine / charts / icons) |
+|                 | markdown scaffold                                      | html scaffold                                               |
+| --------------- | ------------------------------------------------------ | ----------------------------------------------------------- |
+| `manifest.json` | ✓                                                      | ✓                                                           |
+| blank entry     | `index.md`                                             | `index.html`                                                |
+| `assets/`       | ✓                                                      | ✓                                                           |
+| Runtime         | injected by the viewer (markdown-it / KaTeX / Mermaid) | injected by the viewer (CSS base / Alpine / charts / icons) |
 
-The reason html needs no "interactive variant" is the shared runtime: **there is nothing to pre-wire.** Just as a markdown artifact writes `$E=mc^2$` and never `<script src="katex.js">`, an html artifact writes semantic HTML and an `x-data` directive and never `<script src="alpine.js">`. The viewer injects the runtime at render time. The agent *uses* capabilities (which it knows from the authoring guide); it never wires them.
+The reason html needs no "interactive variant" is the shared runtime: **there is nothing to pre-wire.** Just as a markdown artifact writes `$E=mc^2$` and never `<script src="katex.js">`, an html artifact writes semantic HTML and an `x-data` directive and never `<script src="alpine.js">`. The viewer injects the runtime at render time. The agent _uses_ capabilities (which it knows from the authoring guide); it never wires them.
 
 So the agent's `index.html` is **just content** — no `<!doctype>`/`<head>` boilerplate, since the viewer wraps it (symmetric with `.md` being just content). Export later materializes the full standalone document.
 
 > [!NOTE]
-> **The one exception:** an artifact needing a library *outside* the curated runtime (e.g. three.js for a 3D view) vendors it into its own `vendor/` folder. This is not a second init path — it's the same scaffold plus a dependency added *while authoring* for a genuine need, not a variant chosen *at init*. The default is pure shared-runtime; per-artifact vendoring is a rare escape hatch for the long tail.
+> **The one exception:** an artifact needing a library _outside_ the curated runtime (e.g. three.js for a 3D view) vendors it into its own `vendor/` folder. This is not a second init path — it's the same scaffold plus a dependency added _while authoring_ for a genuine need, not a variant chosen _at init_. The default is pure shared-runtime; per-artifact vendoring is a rare escape hatch for the long tail.
 
 ---
 
@@ -166,18 +166,18 @@ The authoring rules above are only advisory if the agent has to remember them. A
 
 Inside `render_artifact`, after the agent has authored files and before the viewer is updated: **format → lint → parse-check → surface-or-return-feedback.** Because the agent writes bundle files with its normal file tools, this gate does **not** prevent the original file edit. It can normalize/autofix the authored files and decide whether the artifact is valid enough to render.
 
-| Outcome | Effect | For |
-|---|---|---|
-| **Autofix** | Bundle files are silently normalized, then rendering proceeds | Formatting, normalization — no judgment needed |
-| **Warning** | Rendering proceeds, feedback returns to the agent | Portability risks, soft issues |
-| **Error** | Rendering is blocked, feedback returns, agent revises and re-renders | Syntax that genuinely won't render |
+| Outcome     | Effect                                                               | For                                            |
+| ----------- | -------------------------------------------------------------------- | ---------------------------------------------- |
+| **Autofix** | Bundle files are silently normalized, then rendering proceeds        | Formatting, normalization — no judgment needed |
+| **Warning** | Rendering proceeds, feedback returns to the agent                    | Portability risks, soft issues                 |
+| **Error**   | Rendering is blocked, feedback returns, agent revises and re-renders | Syntax that genuinely won't render             |
 
-This mirrors the compiler/test loop a coding agent already understands, so the feedback *teaches* within the session — surfacing the rule at the moment it blocks or degrades rendering, not just patching output.
+This mirrors the compiler/test loop a coding agent already understands, so the feedback _teaches_ within the session — surfacing the rule at the moment it blocks or degrades rendering, not just patching output.
 
 ## Why it matters more here
 
 - **The agent writes blind.** It can't see the render — the viewer renders elsewhere. A parse-check is the agent's only pre-flight signal that a Mermaid block or math expression will actually display. Without it, the failure mode is "looks fine to the agent, renders broken in the viewer."
-- **The highest-value checks are real parses, not regexes.** Running Mermaid through its own parser and KaTeX in strict mode catches malformed diagrams/math *before* they render as broken blocks. (Caveat: KaTeX strict runs cleanly headless in Node; **Mermaid's parser historically needs a DOM (jsdom/puppeteer)**, so its in-gate feasibility is a spike — if it can't run headless it degrades to warn-only or is skipped, never blocking. See the roadmap's Early spikes.)
+- **The highest-value checks are real parses, not regexes.** Running Mermaid through its own parser and KaTeX in strict mode catches malformed diagrams/math _before_ they render as broken blocks. (Caveat: KaTeX strict runs cleanly headless in Node; **Mermaid's parser historically needs a DOM (jsdom/puppeteer)**, so its in-gate feasibility is a spike — if it can't run headless it degrades to warn-only or is skipped, never blocking. See the roadmap's Early spikes.)
 
 ## Checks per type — reuse, don't reinvent
 
@@ -188,8 +188,8 @@ Wire up battle-tested tools rather than writing a custom linter; they're fast, m
 - **Prettier** (autofix) — normalizes spacing, list markers, table alignment.
 - **markdownlint** (warn/error) — heading levels, list nesting, malformed tables.
 - **KaTeX strict** (error) — render-validity check for math; runs headless, highest value.
-- **Mermaid parse** (error *if feasible*) — render-validity check for diagrams; highest value, but gated behind the headless-Node feasibility spike. Falls back to warn-only/skipped if Mermaid's parser can't run without a DOM.
-- **Custom tier-check** (warn) — *your* portability rules: Tier 3 syntax (wikilinks, styled HTML) → warning; MathJax-only macros outside the KaTeX subset → warning.
+- **Mermaid parse** (error _if feasible_) — render-validity check for diagrams; highest value, but gated behind the headless-Node feasibility spike. Falls back to warn-only/skipped if Mermaid's parser can't run without a DOM.
+- **Custom tier-check** (warn) — _your_ portability rules: Tier 3 syntax (wikilinks, styled HTML) → warning; MathJax-only macros outside the KaTeX subset → warning.
 
 **html:**
 
@@ -230,13 +230,13 @@ The scaffold/shared-runtime model gives a clean split:
 - `manifest.json`
 - `index.md` / `index.html` — blank at scaffold, filled with content by the agent
 - `assets/` — the artifact's own data, images, generated SVGs
-- `app.js` — *optional*, only when custom logic beyond Alpine directives is needed
+- `app.js` — _optional_, only when custom logic beyond Alpine directives is needed
 
 There is **no `styles.css` and no `vendor/`** in a normal bundle: styling comes from the shared CSS base (the agent writes semantic HTML, not CSS), and libraries are the shared runtime. The bundle is purely the artifact's own content.
 
 ## Core principle: a self-contained directory
 
-The unit of isolation is the **directory boundary**, made to work by **relative links**. Each artifact's own content lives inside its folder, referenced by relative path. Shared capabilities are *not* copied in — they're provided by the viewer — so bundles stay content-only:
+The unit of isolation is the **directory boundary**, made to work by **relative links**. Each artifact's own content lives inside its folder, referenced by relative path. Shared capabilities are _not_ copied in — they're provided by the viewer — so bundles stay content-only:
 
 ```
 artifacts/
@@ -271,19 +271,19 @@ One small per-artifact manifest lets tooling handle any artifact without inspect
 - **`entry`** → where to start rendering.
 - **`sessionFile` / `sessionKey` / `cwd`** → provenance, populated when running under Pi (see Pi integration). `sessionFile` comes from Pi's session manager when available; `sessionKey` is a stable derived key used for filtering without depending on an undocumented `session_id`. Empty/omitted when used standalone.
 - Plus metadata (`title`, `created`) for listing, lifecycle, and cleanup.
-- *(A `vendored` list can be added only by the rare artifact that pulls in a library outside the shared runtime.)*
+- _(A `vendored` list can be added only by the rare artifact that pulls in a library outside the shared runtime.)_
 
 ## Design decisions
 
-- **Use the directory pattern uniformly**, even for currently-single-file artifacts. A Mermaid-only markdown artifact really is one file, but it may *grow* an SVG asset later. Defaulting everything to the directory structure means it can gain assets without restructuring, and tooling stays simple — always `<id>/<entry>`, no special cases.
+- **Use the directory pattern uniformly**, even for currently-single-file artifacts. A Mermaid-only markdown artifact really is one file, but it may _grow_ an SVG asset later. Defaulting everything to the directory structure means it can gain assets without restructuring, and tooling stays simple — always `<id>/<entry>`, no special cases.
 - **Keep assets in an `assets/` subfolder**, not flat. Keeps the entry point obvious and the directory scannable.
-- **Content-only bundles, shared runtime.** Resolve the "self-contained vs shared" question by context: **in the viewer**, artifacts reference the shared runtime (lighter bundles, richer capabilities, less for the agent to write); **on export**, everything used is inlined into a standalone file. So isolation holds where it matters — the artifact's own *content* and the *exported* file are self-contained — while the *capability layer* is shared infrastructure. The store stays isolated per-artifact; only the runtime is shared.
+- **Content-only bundles, shared runtime.** Resolve the "self-contained vs shared" question by context: **in the viewer**, artifacts reference the shared runtime (lighter bundles, richer capabilities, less for the agent to write); **on export**, everything used is inlined into a standalone file. So isolation holds where it matters — the artifact's own _content_ and the _exported_ file are self-contained — while the _capability layer_ is shared infrastructure. The store stays isolated per-artifact; only the runtime is shared.
 
 ---
 
 # Pi integration
 
-Target host: the **Pi coding agent** — a minimal terminal (TUI) harness, extended via TypeScript packages installed with `pi install npm:<pkg>`. Two of its properties shape the integration: it can't render HTML inline (so visuals need an external surface), and extensions are factory functions that subscribe to session events and register tools/commands (which is what makes a *session-reactive* viewer possible).
+Target host: the **Pi coding agent** — a minimal terminal (TUI) harness, extended via TypeScript packages installed with `pi install npm:<pkg>`. Two of its properties shape the integration: it can't render HTML inline (so visuals need an external surface), and extensions are factory functions that subscribe to session events and register tools/commands (which is what makes a _session-reactive_ viewer possible).
 
 ## Packaging as a Pi extension
 
@@ -313,7 +313,7 @@ render_artifact({ id })
 
 The flow: `scaffold_artifact` → agent writes content into the blank entry → `render_artifact`. Because the agent edits real files, there's no content blob to pass and no template to mimic — it composes freely.
 
-**Iteration is re-render in place.** To refine, the agent edits the same entry file and calls `render_artifact({ id })` again — the bundle is re-validated and the viewer re-renders the *same* artifact. A new artifact means a new `scaffold_artifact` call. So the generate→refine loop evolves one artifact rather than spawning near-duplicates.
+**Iteration is re-render in place.** To refine, the agent edits the same entry file and calls `render_artifact({ id })` again — the bundle is re-validated and the viewer re-renders the _same_ artifact. A new artifact means a new `scaffold_artifact` call. So the generate→refine loop evolves one artifact rather than spawning near-duplicates.
 
 ## Storage location: global and session-aware
 
@@ -328,7 +328,7 @@ Pi centralizes its state under `~/.pi/`, so the artifact store lives there too �
 
 A TUI can't render HTML, so artifacts need an external rendering surface. The target experience is a **persistent, session-reactive viewer** — one companion launched by `/viewer`, showing the current session's artifacts and updating as renders/session switches happen. However, persistence across Pi session replacement (`/resume`, `/new`, `/fork`) is a lifecycle-sensitive feature: Pi tears down and rebinds extension instances during those flows, so the first implementation should not assume a long-lived window survives correctly until that behavior is verified.
 
-It's a **unified gallery**, not a per-artifact popup: a list of every artifact in the active session on one side, the selected artifact rendered in the main pane on the other, with export controls. Crucially, the gallery is **type-agnostic** — it renders markdown artifacts through the markdown-it pipeline and html artifacts directly, both ending up as HTML in the same surface. So you switch between *any* artifact type instantly in one place, and the same surface absorbs new types as they're added.
+It's a **unified gallery**, not a per-artifact popup: a list of every artifact in the active session on one side, the selected artifact rendered in the main pane on the other, with export controls. Crucially, the gallery is **type-agnostic** — it renders markdown artifacts through the markdown-it pipeline and html artifacts directly, both ending up as HTML in the same surface. So you switch between _any_ artifact type instantly in one place, and the same surface absorbs new types as they're added.
 
 The preferred direction is still a bidirectional webview because the core requirement is **push, not pull**: Pi should be able to push viewer updates when state changes. But the viewer runtime is an early technical spike, not a foregone conclusion. Compare a Pi/native webview package, a general webview binding, and a small local server plus browser with WebSocket/SSE. If the server/browser route is simpler and reliable enough, it may be a better MVP path even if the final target remains a webview.
 
@@ -382,9 +382,9 @@ Real-time updating breaks a foundational assumption: artifacts are currently **s
 
 - **A — Agent-driven refresh.** Artifact stays static; the agent re-fetches and re-renders on a timer/trigger via the existing re-render-in-place loop. Polled and coarse, burns agent turns — fine for "every few minutes," wrong for a ticking price.
 - **B — Artifact self-polls.** `index.html` runs `setInterval` to re-fetch and update itself; Alpine handles the reactive update. Contradicts self-containment, export, and security (outbound calls from the artifact).
-- **C — Viewer-brokered live channel (front-runner).** The artifact doesn't fetch; the **viewer** holds the data connection and pushes updates into the artifact over the *same bidirectional channel built for session-sync*. Reuses existing plumbing, centralizes network access in the viewer (better security), keeps bundles content-only; the artifact declares "feed X" and reacts to pushes. Cost: a data-broker layer + subscription contract in the viewer.
+- **C — Viewer-brokered live channel (front-runner).** The artifact doesn't fetch; the **viewer** holds the data connection and pushes updates into the artifact over the _same bidirectional channel built for session-sync_. Reuses existing plumbing, centralizes network access in the viewer (better security), keeps bundles content-only; the artifact declares "feed X" and reacts to pushes. Cost: a data-broker layer + subscription contract in the viewer.
 
-Option C is the front-runner because it matches the real-time ambition *and* harmonizes with the architecture — live data becomes the push channel's **second use case**, after session-sync. It's a genuine scope addition, not a refinement, so it's parked as direction rather than built.
+Option C is the front-runner because it matches the real-time ambition _and_ harmonizes with the architecture — live data becomes the push channel's **second use case**, after session-sync. It's a genuine scope addition, not a refinement, so it's parked as direction rather than built.
 
 > [!NOTE]
 > Worth naming so it doesn't calcify: **"artifacts are static" is an assumption, not a law.** Live data is the capability that breaks it, and it was part of the original vision — so the architecture should stay open to it (Option C reuses the channel that already exists).
@@ -395,7 +395,7 @@ Option C is the front-runner because it matches the real-time ambition *and* har
 
 A concrete pass through the whole loop, to ground the pieces — the agent builds a small interactive dashboard.
 
-**1. Decide the type.** The output is something to *operate* (filter, toggle), not just read → `html`.
+**1. Decide the type.** The output is something to _operate_ (filter, toggle), not just read → `html`.
 
 **2. Scaffold.** The agent calls `scaffold_artifact({ type: "html", title: "Q4 Revenue" })`. The extension creates:
 
@@ -406,7 +406,7 @@ A concrete pass through the whole loop, to ground the pieces — the agent build
   assets/
 ```
 
-**3. Author into the blank entry.** Using its normal file tools, the agent writes *just content* — semantic HTML for structure, an Alpine directive for interactivity, a chart spec. No `<!doctype>`, no `<head>`, no `<script>` tags, no CSS:
+**3. Author into the blank entry.** Using its normal file tools, the agent writes _just content_ — semantic HTML for structure, an Alpine directive for interactivity, a chart spec. No `<!doctype>`, no `<head>`, no `<script>` tags, no CSS:
 
 ```html
 <main>
@@ -418,14 +418,16 @@ A concrete pass through the whole loop, to ground the pieces — the agent build
       <button @click="region = 'apac'">APAC</button>
     </nav>
     <p>Showing: <strong x-text="region"></strong></p>
-    <div data-chart='{
+    <div
+      data-chart='{
       "mark": "bar",
       "data": { "url": "assets/revenue.json" },
       "encoding": {
         "x": { "field": "quarter", "type": "ordinal" },
         "y": { "field": "amount", "type": "quantitative" }
       }
-    }'></div>
+    }'
+    ></div>
   </section>
 </main>
 ```
@@ -434,7 +436,7 @@ The semantic tags get styled by the shared CSS base; `x-data`/`@click`/`x-text` 
 
 **4. Render.** The agent calls `render_artifact({ id: "q4-revenue" })`. The validation gate runs (Prettier tidies formatting; HTMLHint confirms well-formed markup; the runtime-check confirms `data-chart` and the Alpine directives map to provided capabilities). On pass, the viewer — already open and scoped to this session — adds the artifact to its list and renders it.
 
-**5. Refine in place.** The user asks for a line chart instead. The agent edits `index.html`, calls `render_artifact({ id: "q4-revenue" })` again — same `id`, so the viewer re-renders the *same* artifact. No duplicate.
+**5. Refine in place.** The user asks for a line chart instead. The agent edits `index.html`, calls `render_artifact({ id: "q4-revenue" })` again — same `id`, so the viewer re-renders the _same_ artifact. No duplicate.
 
 **6. Export (optional).** From the viewer, export → one inlined `.html`: the CSS base, Alpine, the chart lib, and `revenue.json` are all inlined/base64'd into a single file that opens in any browser, detached from the runtime.
 
@@ -444,20 +446,20 @@ A build order that gets a usable surface early, then layers on reactive and expo
 
 ## Components
 
-| Component | Responsibility | Depends on |
-|---|---|---|
-| **Markdown renderer** | markdown-it pipeline + Mermaid/KaTeX (shared, in the viewer) | — |
-| **html runtime** | Shared generated-UI kit: semantic CSS base, Alpine, charting lib, icons (installed, served by viewer) | — |
-| **Authoring guide** | Pi skill telling the agent how to use the html runtime — the enabler that makes it low-effort | html runtime |
-| **Bundle store** | Read/write `~/.pi/artifacts/<id>/`, manifests with `sessionKey`/`sessionFile`/`cwd` | `node:fs`, `node:path` |
-| **`scaffold_artifact` tool** | Agent-callable: create empty bundle (manifest + blank entry + `assets/`), return `{id, path, entry}` | Scaffolds, store |
-| **`render_artifact` tool** | Agent-callable: validate the authored bundle → render/update in viewer (same `id` = in place) → return feedback | renderers, store, validation gate |
-| **Validation gate** | format → lint → parse-check during `render_artifact`; autofix / warn / error, feedback to the agent | renderers, registry |
-| **Scaffolds** | Per-type empty-bundle spec; one per type, no content | renderers |
-| **Renderer registry** | Maps each `stack` value to a renderer, validator, + export targets — the extension point for new types | — |
-| **Unified viewer** | External surface: session-scoped list, renders any type via the registry, export controls; persistent window is the target after lifecycle spike | viewer runtime, store, registry |
-| **Session sync** | Subscribe to `session_start` / replacement → compute `sessionKey` → push filtered list | Viewer, store |
-| **Export** | Inline shared runtime + content into a format the renderer declares | Store, registry |
+| Component                    | Responsibility                                                                                                                                   | Depends on                        |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------- |
+| **Markdown renderer**        | markdown-it pipeline + Mermaid/KaTeX (shared, in the viewer)                                                                                     | —                                 |
+| **html runtime**             | Shared generated-UI kit: semantic CSS base, Alpine, charting lib, icons (installed, served by viewer)                                            | —                                 |
+| **Authoring guide**          | Pi skill telling the agent how to use the html runtime — the enabler that makes it low-effort                                                    | html runtime                      |
+| **Bundle store**             | Read/write `~/.pi/artifacts/<id>/`, manifests with `sessionKey`/`sessionFile`/`cwd`                                                              | `node:fs`, `node:path`            |
+| **`scaffold_artifact` tool** | Agent-callable: create empty bundle (manifest + blank entry + `assets/`), return `{id, path, entry}`                                             | Scaffolds, store                  |
+| **`render_artifact` tool**   | Agent-callable: validate the authored bundle → render/update in viewer (same `id` = in place) → return feedback                                  | renderers, store, validation gate |
+| **Validation gate**          | format → lint → parse-check during `render_artifact`; autofix / warn / error, feedback to the agent                                              | renderers, registry               |
+| **Scaffolds**                | Per-type empty-bundle spec; one per type, no content                                                                                             | renderers                         |
+| **Renderer registry**        | Maps each `stack` value to a renderer, validator, + export targets — the extension point for new types                                           | —                                 |
+| **Unified viewer**           | External surface: session-scoped list, renders any type via the registry, export controls; persistent window is the target after lifecycle spike | viewer runtime, store, registry   |
+| **Session sync**             | Subscribe to `session_start` / replacement → compute `sessionKey` → push filtered list                                                           | Viewer, store                     |
+| **Export**                   | Inline shared runtime + content into a format the renderer declares                                                                              | Store, registry                   |
 
 ## Phases
 
@@ -467,7 +469,7 @@ A build order that gets a usable surface early, then layers on reactive and expo
 2. **MVP-2 — html stack.** Add the shared html runtime (CSS base, Alpine, charts, icons) injected at render time, its authoring guide, and the html validation gate (Prettier + HTMLHint + runtime-check). Confirm the baseline CSP holds for runtime-injected JS. Brings up the dynamic-UI lane on the proven core loop.
 3. **Static viewer.** Add the `/viewer` surface showing the full artifact list and rendering a selected bundle via the renderer registry. No live sync yet — manual refresh is fine. Confirms the chosen viewer runtime, window/process lifecycle, and registry-driven rendering of both types.
 4. **Session sync.** Wire `session_start` / session-replacement events to compute the active `sessionKey` and push the filtered list into the open viewer. Delivers the reactive behavior: switch session → list updates.
-5. **Bidirectional actions.** Add the window→agent channel so a click sends an action back (open, expand, regenerate). Turns the viewer from display-only into interactive. *(Has real design uncertainty — define the action protocol here, don't assume it's just wiring.)*
+5. **Bidirectional actions.** Add the window→agent channel so a click sends an action back (open, expand, regenerate). Turns the viewer from display-only into interactive. _(Has real design uncertainty — define the action protocol here, don't assume it's just wiring.)_
 6. **Export.** Add single-file export (inlined HTML first, then PDF / md).
 
 ## Open decisions

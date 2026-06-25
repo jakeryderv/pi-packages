@@ -9,9 +9,11 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test": "node --test packages/*/test/*.test.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint:md": "markdownlint-cli2 \"**/*.md\" \"#**/node_modules\""
+    "lint:md": "markdownlint-cli2 \"**/*.md\" \"#**/node_modules\"",
+    "pack:artifacts": "npm pack --dry-run --workspace @jakeryderv/pi-artifacts"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.80.2",

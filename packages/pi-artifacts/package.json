@@ -26,5 +26,11 @@
   ],
   "publishConfig": {
     "access": "public"
+  },
+  "dependencies": {
+    "katex": "^0.16.47",
+    "markdown-it": "^14.1.0",
+    "markdownlint": "^0.38.0",
+    "prettier": "^3.8.4"
   }
 }

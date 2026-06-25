@@ -6,8 +6,8 @@ independently to npm with its own catalog entry.
 
 ## Packages
 
-| Package | npm | Status |
-| --- | --- | --- |
+| Package                                 | npm                        | Status   |
+| --------------------------------------- | -------------------------- | -------- |
 | [`pi-artifacts`](packages/pi-artifacts) | `@jakeryderv/pi-artifacts` | scaffold |
 
 ## Documentation layout
@@ -20,6 +20,7 @@ docs sit in `docs/` and exploratory/thinking notes sit in `docs/notes/`.
   - [Packaging & monorepo reference notes](docs/notes/packaging.md)
 - **Package-level** (example: `pi-artifacts`)
   - [Roadmap](packages/pi-artifacts/docs/roadmap.md)
+  - [API contract](packages/pi-artifacts/docs/api.md)
   - [Design notes](packages/pi-artifacts/docs/notes/design.md)
   - [Package README](packages/pi-artifacts/README.md) (the only doc that ships to npm)
 

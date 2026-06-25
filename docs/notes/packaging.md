@@ -65,11 +65,11 @@ Conventions that apply to every extension-bearing package in this repo, verified
 
 ## Sources of truth & caveats
 
-- **Build against the official docs/examples** for correctness: the Pi docs site, the packages spec doc, and the maintainers' extension examples folder. The *conventions* there are authoritative.
+- **Build against the official docs/examples** for correctness: the Pi docs site, the packages spec doc, and the maintainers' extension examples folder. The _conventions_ there are authoritative.
 - The popular **`pi-package-template`** is **community-published (by s1m0n38), not official**. It's a convenient scaffold, not a blessed reference — and its CI/release scaffolding is the genuinely reusable part. Review third-party source before relying on it.
 - **Package scope naming — two distinct scopes, don't conflate them**:
   - **Your publish scope** stays **`@jakeryderv/pi-*`**. This is the npm identity that appears in install commands and catalog entries. It is unaffected by anything Pi does with its own scope.
-  - **Pi's core import scope** is **`@earendil-works/*`** — relevant *only* as the `peerDependencies` import names you declare (e.g. `@earendil-works/pi-coding-agent`). The note that "the project moved to `@earendil-works/*`" refers to **Pi's** packages, not yours. Match this scope only for the peer-dep imports the installed Pi CLI exposes; older material may reference the previous names.
+  - **Pi's core import scope** is **`@earendil-works/*`** — relevant _only_ as the `peerDependencies` import names you declare (e.g. `@earendil-works/pi-coding-agent`). The note that "the project moved to `@earendil-works/*`" refers to **Pi's** packages, not yours. Match this scope only for the peer-dep imports the installed Pi CLI exposes; older material may reference the previous names.
 
 ## Security framing
 

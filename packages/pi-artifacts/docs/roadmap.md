@@ -1,6 +1,6 @@
 # Visualization Artifacts Roadmap
 
-This is the implementation roadmap for the first package in this repo: `@jakeryderv/pi-artifacts`. The fuller product/design notes live in [`./notes/design.md`](./notes/design.md). Cross-cutting repo conventions (dependency placement, extension lifecycle, rebrand-safe paths) live in the repo-level [`packaging notes`](../../../docs/notes/packaging.md).
+This is the implementation roadmap for the first package in this repo: `@jakeryderv/pi-artifacts`. The pinned tool and manifest shapes live in [`./api.md`](./api.md), and the fuller product/design notes live in [`./notes/design.md`](./notes/design.md). Cross-cutting repo conventions (dependency placement, extension lifecycle, rebrand-safe paths) live in the repo-level [`packaging notes`](../../../docs/notes/packaging.md).
 
 ## Initial scaffold decisions
 
@@ -9,7 +9,7 @@ This is the implementation roadmap for the first package in this repo: `@jakeryd
 - Root repo remains private and unpublished.
 - Package includes a Pi extension, a Pi skill/authoring guide, and a package README.
 - MVP preview uses a localhost-only static server from day one.
-- **Store base path**: `~/.pi/artifacts/`. The store is the durable, cross-project, cross-session source of truth — not per-session agent runtime state — so it lives in the `~/.pi` ecosystem-data namespace (alongside other tools' data) rather than inside `~/.pi/agent/` next to the disposable `sessions/`. Provenance ties to a session logically via `sessionKey`/`sessionFile` in the manifest, not by physical location. *Revisit if Pi later ships an official extension data-dir convention/API* (none exists today — the path is chosen manually with `node:os`/`node:path`).
+- **Store base path**: `~/.pi/artifacts/`. The store is the durable, cross-project, cross-session source of truth — not per-session agent runtime state — so it lives in the `~/.pi` ecosystem-data namespace (alongside other tools' data) rather than inside `~/.pi/agent/` next to the disposable `sessions/`. Provenance ties to a session logically via `sessionKey`/`sessionFile` in the manifest, not by physical location. _Revisit if Pi later ships an official extension data-dir convention/API_ (none exists today — the path is chosen manually with `node:os`/`node:path`).
   - **Rebrand-safe derivation**: don't hardcode `.pi`. Pi's config dir name is configurable (`CONFIG_DIR_NAME`, default `.pi`; forks rename it), so compute the store as `join(os.homedir(), CONFIG_DIR_NAME, "artifacts")` — which equals `~/.pi/artifacts/` by default. `CONFIG_DIR_NAME` is exported from `@earendil-works/pi-coding-agent`.
 - **Cross-cutting conventions** (dependency placement, no-background-work-in-factory lifecycle anchor, rebrand-safe paths) apply here but are documented once at the repo level — see [`docs/notes/packaging.md` → Extension conventions](../../../docs/notes/packaging.md#extension-conventions-cross-cutting). For this package they mean: validation-gate libs (Prettier, markdownlint, KaTeX; later HTMLHint) go in the package `dependencies`, and the preview server starts in `session_start` / closes in `session_shutdown`.
 - **`id` derivation**: `slugify(title)`, with collision handling by numeric suffix (`-2`, `-3`, …). Locked now because the manifest, store, and preview server all encode it.

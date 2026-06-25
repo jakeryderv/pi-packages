@@ -9,10 +9,11 @@
     "noUncheckedIndexedAccess": true,
     "esModuleInterop": true,
     "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "noEmit": true,
     "isolatedModules": true
   },
-  "include": ["packages/*/extensions/**/*.ts"]
+  "include": ["packages/*/extensions/**/*.ts", "packages/*/test/**/*.ts"]
 }

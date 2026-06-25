@@ -5,9 +5,10 @@ validate, and preview artifact bundles — portable markdown documents today, an
 interactive html stack next — in a session-scoped viewer.
 
 > **Status: scaffold.** The package loads and registers its tools/command as
-> stubs. See the [roadmap](docs/roadmap.md) for the sequenced build (MVP-1
-> markdown-only, then MVP-2 html) and the [design notes](docs/notes/design.md)
-> for the full vision.
+> stubs. See the [roadmap](https://github.com/jakeryderv/pi-packages/blob/main/packages/pi-artifacts/docs/roadmap.md),
+> [API contract](https://github.com/jakeryderv/pi-packages/blob/main/packages/pi-artifacts/docs/api.md),
+> and [design notes](https://github.com/jakeryderv/pi-packages/blob/main/packages/pi-artifacts/docs/notes/design.md)
+> for the implementation plan.
 
 ## What it provides
 
