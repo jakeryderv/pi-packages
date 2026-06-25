@@ -15,5 +15,9 @@
     "noEmit": true,
     "isolatedModules": true
   },
-  "include": ["packages/*/extensions/**/*.ts", "packages/*/test/**/*.ts"]
+  "include": [
+    ".pi/extensions/**/*.ts",
+    "packages/*/extensions/**/*.ts",
+    "packages/*/test/**/*.ts"
+  ]
 }
