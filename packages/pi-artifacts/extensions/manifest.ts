@@ -1,4 +1,4 @@
-import type { ArtifactManifest, ArtifactStack } from "./types";
+import type { ArtifactManifest, ArtifactStack } from "./types.ts";
 
 const SUPPORTED_STACKS = new Set<ArtifactStack>(["markdown"]);
 

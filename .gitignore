@@ -10,3 +10,6 @@ node_modules/
 dist/
 .cache/
 *.tsbuildinfo
+
+# MCP / tool scratch output
+.playwright-mcp/

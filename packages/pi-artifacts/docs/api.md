@@ -66,6 +66,61 @@ Structured result (`details`):
 Tool `content` should contain a concise human summary. Tool `details` is the
 source of truth for structured follow-up.
 
+## `list_artifacts`
+
+Input: `{}`.
+
+Structured result (`details`):
+
+```json
+{
+  "artifacts": [
+    {
+      "id": "artifact-title",
+      "title": "Artifact title",
+      "stack": "markdown",
+      "updated": "2026-06-24T00:00:00.000Z",
+      "cwd": "/home/me/project"
+    }
+  ],
+  "count": 1
+}
+```
+
+Artifacts are listed newest-first by `updated`. Invalid/unreadable bundles are
+skipped rather than failing the call.
+
+## `delete_artifact`
+
+Input:
+
+```json
+{
+  "id": "artifact-title"
+}
+```
+
+Structured result (`details`):
+
+```json
+{
+  "ok": true,
+  "id": "artifact-title"
+}
+```
+
+- Deletes the entire bundle directory and unregisters any active preview.
+- Rejects ids that escape the store (path traversal) and ids that do not exist;
+  failures return `{ ok: false, id, error }`.
+
+## `/viewer` command
+
+Opens the static artifact gallery served by the localhost preview server. When a
+Chromium-family browser is available it launches a dedicated, chromeless app
+window with an isolated profile, managed by the extension and closed on session
+shutdown. Otherwise it falls back to the default browser, then to printing the
+URL. Overrides: `PI_ARTIFACTS_VIEWER=browser`, `PI_ARTIFACTS_BROWSER=<path>`.
+
 ## Manifest
 
 Each bundle contains `manifest.json`:

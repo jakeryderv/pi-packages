@@ -46,6 +46,9 @@ The smallest end-to-end slice. Markdown is the only `stack`; no shared html runt
    - do not proxy external network requests by default
    - **set a baseline restrictive `Content-Security-Policy` header on all responses** (cheap, and it is the real boundary once the html stack lands — establish it now)
 8. Markdown authoring skill that tells the agent how to create portable markdown artifacts within the ruleset.
+9. Static browser gallery via `/viewer`: list valid store artifacts and link to local previews. Manual refresh is acceptable; live session sync remains deferred.
+
+**Current implementation status:** MVP-1 is implemented with the documented Mermaid fallback: Mermaid fences emit a non-blocking warning instead of syntax validation. The static `/viewer` gallery is also implemented on the localhost server.
 
 ### MVP-2 — html stack
 
@@ -64,7 +67,7 @@ Resolve these before investing heavily in the full viewer:
 - Viewer runtime: Pi/native webview, general webview binding, or local server + browser + WebSocket/SSE.
 - Lifecycle behavior across `/resume`, `/new`, and `/fork`.
 - Session identity source: confirm `ctx.sessionManager.getSessionFile()` is sufficient and derive `sessionKey` from it.
-- **Mermaid parse-check feasibility in Node**: Mermaid historically needs a DOM (jsdom/puppeteer) even for `mermaid.parse`, unlike KaTeX/markdownlint/Prettier/HTMLHint which run cleanly headless. Confirm whether it runs headless before committing it to the gate. **Fallback if it can't: Mermaid validation degrades to warn-only or is skipped — it must never block the gate or the MVP.**
+- **Mermaid parse-check feasibility in Node**: Mermaid historically needs a DOM (jsdom/puppeteer) even for `mermaid.parse`, unlike KaTeX/markdownlint/Prettier/HTMLHint which run cleanly headless. MVP-1 uses the planned fallback: Mermaid fences produce a warning and never block rendering. Revisit if adding a reliable headless parser.
 - HTML rendering security: sandboxing, CSP, network policy, file access, and vendored JS policy. (Baseline CSP is **not** deferred — it ships in MVP-1's preview server; this spike covers the deeper sandboxing posture.)
 - Preview server details: port selection, lifecycle/shutdown, stale server cleanup, and path allowlisting.
 
