@@ -41,6 +41,20 @@ Conceptual outline for building and publishing packages for the Pi coding agent.
 - Give every publishable package a tight `files` list from the start: resource directories (`extensions`, `skills`, `prompts`, `themes`) plus README/docs/assets needed at runtime/catalog time.
 - Add `pi.image` or `pi.video` later when there is a meaningful preview for the catalog.
 
+### Formatter config (`biome.json`) — why it exists
+
+The repo's own formatter is **Prettier** (2-space, per `.editorconfig`); biome is
+**not** a project dependency. But the pi-lens editor agent runs a biome-based
+auto-format on files it writes, and biome's default indentation is **tabs** —
+which silently re-tabs edited files and then fails `prettier --check` right
+before publish (it bit 0.2.0 and 0.3.0). The root `biome.json` pins biome to
+`indentStyle: space`, `indentWidth: 2`, so the agent's auto-format agrees with
+Prettier. Biome discovers it by walking up from each edited file, so one
+root file covers the whole monorepo. It is repo-root only (not in any package's
+`files`), so it never ships in a tarball. Verified empirically: with the config,
+`biome format` reports "No fixes applied" on Prettier-clean files; without it,
+biome re-tabs them.
+
 ### Extension conventions (cross-cutting)
 
 Conventions that apply to every extension-bearing package in this repo, verified against the Pi docs:
