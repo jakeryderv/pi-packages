@@ -1,8 +1,6 @@
 # pi-packages
 
-Monorepo of packages for the [Pi coding agent](https://pi.dev/). The repo root is
-private and never published; each package under `packages/*` publishes
-independently to npm with its own catalog entry.
+Monorepo of packages for the [Pi coding agent](https://pi.dev/).
 
 ## Packages
 
