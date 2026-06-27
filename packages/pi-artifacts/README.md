@@ -5,11 +5,13 @@ validate, and preview artifact bundles — portable markdown documents and an
 interactive html stack (Pico CSS + CSP-clean Chart.js) — in a session-scoped
 viewer.
 
-> **Status: markdown + html.** The package can scaffold markdown and html
-> artifact bundles, validate/normalize them, serve localhost previews, and show
-> a static browser gallery via `/viewer`. html artifacts get a shared runtime
-> (Pico CSS, Chart.js, icons) injected under a strict CSP. Session-reactive
-> gallery updates are still roadmap items. See the [roadmap](https://github.com/jakeryderv/pi-packages/blob/main/packages/pi-artifacts/docs/roadmap.md),
+> **Status: markdown + html, live viewer.** The package can scaffold markdown
+> and html artifact bundles, validate/normalize them, serve localhost previews,
+> and show a session-scoped browser gallery via `/viewer` that updates live
+> (Server-Sent Events) as artifacts are rendered or deleted — and open artifact
+> pages reload themselves when re-rendered. html artifacts get
+> a shared runtime (Pico CSS, Chart.js, icons) injected under a strict CSP. See
+> the [roadmap](https://github.com/jakeryderv/pi-packages/blob/main/packages/pi-artifacts/docs/roadmap.md),
 > [API contract](https://github.com/jakeryderv/pi-packages/blob/main/packages/pi-artifacts/docs/api.md),
 > and [design notes](https://github.com/jakeryderv/pi-packages/blob/main/packages/pi-artifacts/docs/notes/design.md)
 > for the broader plan.
@@ -53,7 +55,9 @@ bundles.
   - **html:** Prettier + HTMLHint + CSP/chart capability checks; shared runtime (Pico CSS, Chart.js via a JSON chart-spec convention, an icon sprite) injected from `/runtime`.
 - **`list_artifacts`** tool — list artifact bundles in the store, newest first.
 - **`delete_artifact`** tool — delete a bundle and all of its files from the store.
-- **`/viewer`** command — open a static gallery of artifacts in the store. When a
+- **`/viewer`** command — open a live gallery of artifacts, scoped to the current
+  session (with an "all sessions" toggle) and auto-updating via Server-Sent
+  Events as you render or delete. When a
   Chromium-family browser is available it opens in a dedicated, chromeless app
   window (isolated profile, closed on session shutdown); otherwise it falls back
   to your default browser. Override with `PI_ARTIFACTS_VIEWER=browser` (force a

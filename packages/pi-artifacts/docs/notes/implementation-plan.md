@@ -235,13 +235,38 @@ is already present, so no CSP change. The open Phase A `/resume` smoke test
 (no leaked servers) should be confirmed first, since D pushes over the
 session-lifecycle boundary it exercises.
 
-### Phase D — Session-reactive viewer
+### Phase D — Session-reactive viewer (DONE, 0.3.0)
 
-1. Filter the gallery by active `sessionKey`.
-2. Push updates to the open viewer on `session_start`/replacement and on render
-   (SSE/WebSocket). Depends on Phase A lifecycle work and the runtime spike.
-3. Keep the push mechanism behind the transport seam (invariant 2) so a webview
-   front-end could reuse it later.
+Built on the resolved spike (server + browser + SSE). Shipped:
+
+1. **Session-scoped gallery.** `/viewer` filters by the active `sessionKey`
+   (already in the manifest); `/viewer?all` shows every session, and the header
+   carries a toggle between the two. With no active session key the viewer shows
+   all (unchanged behavior).
+2. **Live push via SSE.** The preview server exposes `/events`
+   (`text/event-stream`); pages open an `EventSource` and reload on `update`.
+   `broadcastUpdate(id?)` fires on `render_artifact`, `delete_artifact`, and
+   `session_start`/replacement. The shared client (`/runtime/pi/viewer-live.js`,
+   a served file — inline `<script>` is CSP-blocked) is included by **both** the
+   gallery and every artifact page: the gallery reloads on any update; an
+   artifact page (tagged with `data-artifact-id`) reloads only when its own id
+   is broadcast, so editing+re-rendering one artifact refreshes that open page
+   without disturbing unrelated tabs. A full authored html document (served
+   verbatim) opts out of live reload. Allowed by `connect-src 'self'` (no CSP
+   change); no new dependency (stdlib `http`).
+3. **Transport seam preserved (invariants 1–3).** Push lives entirely in the
+   server's SSE client set + `broadcastUpdate()`; the renderer and store are
+   unaware of it. The extension calls `setSessionKey`/`broadcastUpdate` through
+   the `PreviewServerState` interface only. A webview front-end could reuse the
+   same seam later.
+4. **Lifecycle safety.** `close()` ends every held-open SSE response before
+   `server.close()`, so session replacement still tears the server down cleanly
+   — verified by the live `/resume` smoke test (no leaked servers) and a
+   teardown test asserting `close()` completes < 1s with open SSE clients.
+
+Tests: 29 total (was 26) — session filtering, `?all` override, unscoped
+fallback, SSE stream + broadcast + clean teardown. Full preflight clean.
+Version bumped to 0.3.0; publish left as a manual step.
 
 ### Phase E — Export
 

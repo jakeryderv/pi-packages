@@ -330,6 +330,97 @@ test("preview server viewer lists store artifacts", async (t) => {
   assert.match(html, /Pi Artifacts/);
   assert.match(html, /Gallery Item/);
   assert.match(html, /\/artifacts\/gallery-item\//);
+  // Live-update script must be a served file (CSP script-src 'self' blocks
+  // inline <script>), and the served file must exist.
+  assert.match(html, /<script src="\/runtime\/pi\/viewer-live\.js"/);
+  assert.doesNotMatch(html, /new EventSource/);
+  const live = await fetch(`${server.url}/runtime/pi/viewer-live.js`);
+  assert.equal(live.status, 200);
+  assert.match(await live.text(), /EventSource/);
+});
+
+test("viewer filters by active session key and honors ?all", async (t) => {
+  const root = await makeTempRoot(t);
+  await scaffoldArtifact({
+    title: "Mine",
+    stack: MARKDOWN_STACK,
+    cwd: "/project",
+    root,
+    sessionKey: "session-a",
+  });
+  await scaffoldArtifact({
+    title: "Theirs",
+    stack: MARKDOWN_STACK,
+    cwd: "/project",
+    root,
+    sessionKey: "session-b",
+  });
+
+  const server = await createPreviewServerState(root);
+  t.after(() => server.close());
+  server.setSessionKey("session-a");
+
+  const scoped = await (await fetch(server.viewerUrl!)).text();
+  assert.match(scoped, /Mine/);
+  assert.doesNotMatch(scoped, /Theirs/);
+  assert.match(scoped, /all sessions/);
+
+  const all = await (await fetch(`${server.viewerUrl}?all`)).text();
+  assert.match(all, /Mine/);
+  assert.match(all, /Theirs/);
+});
+
+test("viewer shows all sessions when no session key is set", async (t) => {
+  const root = await makeTempRoot(t);
+  await scaffoldArtifact({
+    title: "Unscoped",
+    stack: MARKDOWN_STACK,
+    cwd: "/project",
+    root,
+    sessionKey: "session-x",
+  });
+
+  const server = await createPreviewServerState(root);
+  t.after(() => server.close());
+
+  const html = await (await fetch(server.viewerUrl!)).text();
+  assert.match(html, /Unscoped/);
+});
+
+test("events endpoint streams an update on broadcast and ends on close", async (t) => {
+  const root = await makeTempRoot(t);
+  const server = await createPreviewServerState(root);
+
+  const controller = new AbortController();
+  const response = await fetch(`${server.url}/events`, {
+    signal: controller.signal,
+  });
+  assert.equal(response.status, 200);
+  assert.match(
+    response.headers.get("content-type") ?? "",
+    /text\/event-stream/,
+  );
+
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+
+  // Give the connection a tick to register, then broadcast for an artifact.
+  await new Promise((r) => setTimeout(r, 50));
+  server.broadcastUpdate("some-artifact");
+
+  let received = "";
+  while (!received.includes("event: update")) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    received += decoder.decode(value, { stream: true });
+  }
+  assert.match(received, /event: update/);
+  // The affected artifact id rides along so artifact pages can self-filter.
+  assert.match(received, /data: \{"id":"some-artifact"\}/);
+
+  // close() must end held-open SSE responses so the server can shut down.
+  await server.close();
+  controller.abort();
 });
 
 test("preview server renders registered markdown artifacts with CSP", async (t) => {
@@ -362,7 +453,16 @@ test("preview server renders registered markdown artifacts with CSP", async (t) 
 
   const response = await fetch(url);
   assert.equal(response.headers.get("content-security-policy"), BASELINE_CSP);
-  assert.match(await response.text(), /<h1>Hello Preview<\/h1>/);
+  const pageHtml = await response.text();
+  assert.match(pageHtml, /<h1>Hello Preview<\/h1>/);
+  // Artifact page subscribes to live reload scoped to its own id.
+  assert.match(
+    pageHtml,
+    new RegExp(
+      `<script src="/runtime/pi/viewer-live\\.js" data-artifact-id="${artifact.id}"`,
+    ),
+  );
+  assert.doesNotMatch(pageHtml, /new EventSource/);
 
   const assetResponse = await fetch(`${url}assets/chart.svg`);
   assert.equal(
@@ -381,6 +481,24 @@ test("renderHtmlPage wraps a fragment and injects the shared runtime", () => {
   assert.match(page, /^<!doctype html>/);
   assert.match(page, /<title>Dashboard<\/title>/);
   assert.match(page, /<h1>Chart<\/h1>/);
+});
+
+test("renderers inject id-scoped live reload only when given an id", () => {
+  const htmlNoId = renderHtmlPage("<h1>X</h1>", "T");
+  assert.doesNotMatch(htmlNoId, /viewer-live\.js/);
+  const htmlWithId = renderHtmlPage("<h1>X</h1>", "T", "my-chart");
+  assert.match(
+    htmlWithId,
+    /<script src="\/runtime\/pi\/viewer-live\.js" data-artifact-id="my-chart"/,
+  );
+
+  const mdNoId = renderMarkdownPage("# X", "T");
+  assert.doesNotMatch(mdNoId, /viewer-live\.js/);
+  const mdWithId = renderMarkdownPage("# X", "T", "my-doc");
+  assert.match(
+    mdWithId,
+    /<script src="\/runtime\/pi\/viewer-live\.js" data-artifact-id="my-doc"/,
+  );
 });
 
 test("renderHtmlPage serves a full document verbatim", () => {

@@ -135,9 +135,16 @@ interface MathReplacement {
   block: boolean;
 }
 
-export function renderMarkdownPage(markdown: string, title: string): string {
+export function renderMarkdownPage(
+  markdown: string,
+  title: string,
+  artifactId?: string,
+): string {
   const body = renderMarkdownBody(markdown);
   const escapedTitle = escapeHtml(title);
+  const liveReload = artifactId
+    ? `<script src="/runtime/pi/viewer-live.js" data-artifact-id="${escapeHtml(artifactId)}" defer></script>\n`
+    : "";
 
   return `<!doctype html>
 <html lang="en">
@@ -166,7 +173,7 @@ blockquote { border-left: 0.25rem solid color-mix(in srgb, CanvasText 25%, Canva
 .katex-display { overflow-x: auto; overflow-y: hidden; }
 </style>
 <link rel="stylesheet" href="/runtime/katex/katex.min.css">
-</head>
+${liveReload}</head>
 <body>
 ${body}
 </body>

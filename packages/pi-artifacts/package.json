@@ -1,6 +1,6 @@
 {
   "name": "@jakeryderv/pi-artifacts",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Rich visualization artifacts for the Pi coding agent: scaffold, validate, and preview portable markdown and html bundles.",
   "type": "module",
   "license": "MIT",

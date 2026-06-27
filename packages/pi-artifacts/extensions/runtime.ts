@@ -31,5 +31,6 @@ export const RUNTIME_URLS = {
   picoCss: "/runtime/pico/pico.classless.min.css",
   chartJs: "/runtime/chartjs/chart.umd.js",
   chartHydrateJs: "/runtime/pi/chart-hydrate.js",
+  viewerLiveJs: "/runtime/pi/viewer-live.js",
   icons: "/runtime/pi/icons.svg",
 } as const;

@@ -99,8 +99,15 @@ function registerPreviewLifecycle(
   // Background resources (the preview server) must NOT start in the factory.
   // They start here on session_start and are torn down idempotently on
   // session_shutdown. render_artifact also lazily starts the server if needed.
-  pi.on("session_start", async (_event, _ctx) => {
-    await previewServer.get();
+  pi.on("session_start", async (_event, ctx) => {
+    const server = await previewServer.get();
+    const sessionFile = getSessionFile(ctx);
+    server.setSessionKey(
+      sessionFile ? sessionKeyFromFile(sessionFile) : undefined,
+    );
+    // A new/resumed/forked session changes the active scope; nudge any open
+    // viewer to re-fetch its (now differently scoped) list.
+    server.broadcastUpdate();
   });
 
   pi.on("session_shutdown", async (_event, _ctx) => {
@@ -221,6 +228,7 @@ async function executeRenderArtifact(
       manifest: updatedManifest,
     });
     const url = server.artifactUrl(artifact.id);
+    server.broadcastUpdate(artifact.id);
 
     return {
       content: [
@@ -316,6 +324,7 @@ function registerDeleteTool(
         await deleteArtifact(input.id);
         const server = previewServer.peek();
         server?.unregisterArtifact(input.id);
+        server?.broadcastUpdate();
         return {
           content: [
             { type: "text" as const, text: `Deleted artifact ${input.id}.` },

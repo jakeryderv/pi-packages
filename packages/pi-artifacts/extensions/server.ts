@@ -1,6 +1,11 @@
 import { createReadStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
-import { createServer, type Server, type ServerResponse } from "node:http";
+import {
+  createServer,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from "node:http";
 import { extname, resolve } from "node:path";
 
 import { renderHtmlPage } from "./html.ts";
@@ -35,13 +40,37 @@ export interface PreviewServerState {
   registerArtifact: (record: PreviewArtifactRecord) => void;
   unregisterArtifact: (id: string) => void;
   artifactUrl: (id: string) => string | undefined;
+  /** Set the active session for gallery scoping (Phase D). */
+  setSessionKey: (key: string | undefined) => void;
+  /**
+   * Push a live `update` event to connected viewers (Phase D). Pass the
+   * affected artifact id so an open artifact page reloads only when it
+   * changed; the gallery reloads on any update. Omit for session/global
+   * changes.
+   */
+  broadcastUpdate: (artifactId?: string) => void;
   close: () => Promise<void>;
+}
+
+/**
+ * Per-request context. `sessionKey` is read fresh each request (it changes on
+ * session replacement) and `sseClients` is the live transport seam: the only
+ * place push reaches the viewer, kept out of the renderer/store (invariants).
+ */
+interface RequestContext {
+  artifacts: Map<string, PreviewArtifactRecord>;
+  root: string;
+  sseClients: Set<ServerResponse>;
+  sessionKey: string | undefined;
 }
 
 export async function createPreviewServerState(
   root = artifactsRoot(),
 ): Promise<PreviewServerState> {
   const artifacts = new Map<string, PreviewArtifactRecord>();
+  const sseClients = new Set<ServerResponse>();
+  let sessionKey: string | undefined;
+
   const server = createServer(async (request, response) => {
     setSecurityHeaders(response);
 
@@ -52,7 +81,12 @@ export async function createPreviewServerState(
       }
 
       const url = new URL(request.url, "http://127.0.0.1");
-      await handleRequest(url, artifacts, root, response);
+      await handleRequest(
+        url,
+        { artifacts, root, sseClients, sessionKey },
+        request,
+        response,
+      );
     } catch (error) {
       sendText(
         response,
@@ -77,23 +111,44 @@ export async function createPreviewServerState(
     artifactUrl(id) {
       return `${baseUrl}/artifacts/${encodeURIComponent(id)}/`;
     },
-    close: () => closeServer(server),
+    setSessionKey(key) {
+      sessionKey = key;
+    },
+    broadcastUpdate(artifactId) {
+      broadcast(sseClients, "update", artifactId);
+    },
+    // SSE responses are held open forever; they must be ended here or
+    // `server.close()` never completes (this preserves the verified
+    // no-leaked-server teardown across session replacement).
+    close: async () => {
+      for (const client of sseClients) {
+        client.end();
+      }
+      sseClients.clear();
+      await closeServer(server);
+    },
   };
 }
 
 async function handleRequest(
   url: URL,
-  artifacts: Map<string, PreviewArtifactRecord>,
-  root: string,
+  ctx: RequestContext,
+  request: IncomingMessage,
   response: ServerResponse,
 ): Promise<void> {
+  const { artifacts, root, sseClients, sessionKey } = ctx;
   const segments = url.pathname
     .split("/")
     .filter(Boolean)
     .map(decodeURIComponent);
 
+  if (segments[0] === "events") {
+    addSseClient(sseClients, request, response);
+    return;
+  }
+
   if (segments.length === 0 || segments[0] === "viewer") {
-    await sendViewer(root, response);
+    await sendViewer(root, sessionKey, url.searchParams.has("all"), response);
     return;
   }
 
@@ -136,11 +191,56 @@ async function getPreviewArtifact(
   return await loadArtifact(id, root).catch(() => undefined);
 }
 
+/**
+ * SSE transport seam (Phase D). The viewer opens an `EventSource` to `/events`;
+ * we hold the response open and push `update` events on render/delete/session
+ * change. Unidirectional server->viewer, allowed by `connect-src 'self'`.
+ */
+function addSseClient(
+  clients: Set<ServerResponse>,
+  request: IncomingMessage,
+  response: ServerResponse,
+): void {
+  response.statusCode = 200;
+  response.setHeader("Content-Type", "text/event-stream");
+  response.setHeader("Cache-Control", "no-cache, no-transform");
+  response.setHeader("Connection", "keep-alive");
+  // Open the stream and nudge the client to retry quickly if it drops.
+  response.write("retry: 2000\n\n");
+
+  clients.add(response);
+  const drop = () => {
+    clients.delete(response);
+  };
+  request.on("close", drop);
+  response.on("close", drop);
+  response.on("error", drop);
+}
+
+function broadcast(
+  clients: Set<ServerResponse>,
+  event: string,
+  artifactId?: string,
+): void {
+  const data = JSON.stringify(artifactId ? { id: artifactId } : {});
+  const frame = `event: ${event}\ndata: ${data}\n\n`;
+  for (const client of clients) {
+    client.write(frame);
+  }
+}
+
 async function sendViewer(
   root: string,
+  sessionKey: string | undefined,
+  showAll: boolean,
   response: ServerResponse,
 ): Promise<void> {
-  const artifacts = await listArtifacts(root);
+  const all = await listArtifacts(root);
+  const scoped =
+    showAll || !sessionKey
+      ? all
+      : all.filter((artifact) => artifact.manifest.sessionKey === sessionKey);
+  const artifacts = scoped;
   const rows = artifacts
     .map((artifact) => {
       const title = escapeHtml(artifact.manifest.title);
@@ -175,18 +275,45 @@ li { padding: 1rem 0; border-bottom: 1px solid color-mix(in srgb, CanvasText 12%
 a { font-size: 1.15rem; font-weight: 650; }
 small { display: block; color: color-mix(in srgb, CanvasText 70%, Canvas); }
 .empty { padding: 2rem; border: 1px dashed color-mix(in srgb, CanvasText 30%, Canvas); border-radius: 0.75rem; }
+.scope { font-size: 0.85rem; font-weight: 400; }
+.scope a { font-size: inherit; font-weight: inherit; }
 </style>
 </head>
 <body>
 <header>
 <h1>Pi Artifacts</h1>
-<p>${artifacts.length} artifact${artifacts.length === 1 ? "" : "s"}</p>
+<p>${artifacts.length} artifact${artifacts.length === 1 ? "" : "s"}
+${viewerScopeLabel(sessionKey, showAll)}</p>
 </header>
-${rows ? `<ul>${rows}</ul>` : `<p class="empty">No artifacts found in ${escapeHtml(root)}.</p>`}
+${rows ? `<ul>${rows}</ul>` : `<p class="empty">${viewerEmptyMessage(root, sessionKey, showAll)}</p>`}
+<script src="/runtime/pi/viewer-live.js" defer></script>
 </body>
 </html>
 `,
   );
+}
+
+function viewerScopeLabel(
+  sessionKey: string | undefined,
+  showAll: boolean,
+): string {
+  if (!sessionKey) {
+    return "";
+  }
+  return showAll
+    ? `· <span class="scope">all sessions · <a href="/viewer">this session</a></span>`
+    : `· <span class="scope">this session · <a href="/viewer?all">all sessions</a></span>`;
+}
+
+function viewerEmptyMessage(
+  root: string,
+  sessionKey: string | undefined,
+  showAll: boolean,
+): string {
+  if (sessionKey && !showAll) {
+    return `No artifacts for this session yet. <a href="/viewer?all">Show all sessions</a>.`;
+  }
+  return `No artifacts found in ${escapeHtml(root)}.`;
 }
 
 async function sendRenderedArtifact(
@@ -196,12 +323,18 @@ async function sendRenderedArtifact(
   switch (artifact.manifest.stack) {
     case "markdown": {
       const markdown = await readFile(artifact.entryPath, "utf8");
-      sendHtml(response, renderMarkdownPage(markdown, artifact.manifest.title));
+      sendHtml(
+        response,
+        renderMarkdownPage(markdown, artifact.manifest.title, artifact.id),
+      );
       return;
     }
     case "html": {
       const html = await readFile(artifact.entryPath, "utf8");
-      sendHtml(response, renderHtmlPage(html, artifact.manifest.title));
+      sendHtml(
+        response,
+        renderHtmlPage(html, artifact.manifest.title, artifact.id),
+      );
       return;
     }
   }

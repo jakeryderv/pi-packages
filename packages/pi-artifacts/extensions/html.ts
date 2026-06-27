@@ -20,12 +20,21 @@ import { RUNTIME_URLS } from "./runtime.ts";
  * If the authored source is a full HTML document (has its own `<html>`/`<body>`)
  * it is served verbatim — an escape hatch that opts out of the shared runtime.
  */
-export function renderHtmlPage(html: string, title: string): string {
+export function renderHtmlPage(
+  html: string,
+  title: string,
+  artifactId?: string,
+): string {
   if (isFullDocument(html)) {
+    // Served verbatim (opts out of the shared shell), so it also opts out of
+    // live reload — we do not inject into author-owned documents.
     return html;
   }
 
   const escapedTitle = escapeHtml(title);
+  const liveReload = artifactId
+    ? `<script src="${RUNTIME_URLS.viewerLiveJs}" data-artifact-id="${escapeHtml(artifactId)}" defer></script>\n`
+    : "";
 
   return `<!doctype html>
 <html lang="en">
@@ -43,7 +52,7 @@ figure { margin: 1.5rem 0; }
 </style>
 <script src="${RUNTIME_URLS.chartJs}" defer></script>
 <script src="${RUNTIME_URLS.chartHydrateJs}" defer></script>
-</head>
+${liveReload}</head>
 <body>
 ${html}
 </body>
