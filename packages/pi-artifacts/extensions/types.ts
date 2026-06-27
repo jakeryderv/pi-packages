@@ -1,4 +1,4 @@
-export type ArtifactStack = "markdown";
+export type ArtifactStack = "markdown" | "html";
 
 export interface ArtifactManifest {
   id: string;

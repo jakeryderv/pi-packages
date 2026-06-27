@@ -12,6 +12,7 @@ import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 
 import { createManifest, isArtifactManifest } from "../extensions/manifest.ts";
+import { renderHtmlPage } from "../extensions/html.ts";
 import { renderMarkdownPage } from "../extensions/markdown.ts";
 import { isPathInside } from "../extensions/path-safety.ts";
 import {
@@ -26,6 +27,7 @@ import {
   scaffoldArtifact,
   writeManifest,
 } from "../extensions/store.ts";
+import { validateHtmlArtifact } from "../extensions/validation/html.ts";
 import { validateMarkdownArtifact } from "../extensions/validation/markdown.ts";
 import {
   buildAppWindowArgs,
@@ -33,6 +35,7 @@ import {
 } from "../extensions/viewer-launcher.ts";
 
 const MARKDOWN_STACK = "markdown";
+const HTML_STACK = "html";
 
 test("buildAppWindowArgs builds an isolated chromeless app window", () => {
   assert.deepEqual(buildAppWindowArgs("http://x/viewer", "/tmp/profile"), [
@@ -112,7 +115,8 @@ test("isArtifactManifest accepts valid manifests and rejects invalid shapes", ()
   });
 
   assert.equal(isArtifactManifest(validManifest), true);
-  assert.equal(isArtifactManifest({ ...validManifest, stack: "html" }), false);
+  assert.equal(isArtifactManifest({ ...validManifest, stack: "html" }), true);
+  assert.equal(isArtifactManifest({ ...validManifest, stack: "pdf" }), false);
   assert.equal(isArtifactManifest({ ...validManifest, cwd: undefined }), false);
   assert.equal(isArtifactManifest(null), false);
 });
@@ -366,6 +370,182 @@ test("preview server renders registered markdown artifacts with CSP", async (t) 
     "image/svg+xml; charset=utf-8",
   );
   assert.equal(await assetResponse.text(), "<svg></svg>");
+});
+
+test("renderHtmlPage wraps a fragment and injects the shared runtime", () => {
+  const page = renderHtmlPage("<h1>Chart</h1>", "Dashboard");
+
+  assert.match(page, /\/runtime\/pico\/pico\.classless\.min\.css/);
+  assert.match(page, /\/runtime\/chartjs\/chart\.umd\.js/);
+  assert.match(page, /\/runtime\/pi\/chart-hydrate\.js/);
+  assert.match(page, /^<!doctype html>/);
+  assert.match(page, /<title>Dashboard<\/title>/);
+  assert.match(page, /<h1>Chart<\/h1>/);
+});
+
+test("renderHtmlPage serves a full document verbatim", () => {
+  const doc = "<!doctype html>\n<html><body><p>Whole</p></body></html>";
+  assert.equal(renderHtmlPage(doc, "Ignored"), doc);
+});
+
+test("scaffoldArtifact creates html bundles with an index.html entry", async (t) => {
+  const root = await makeTempRoot(t);
+  const scaffolded = await scaffoldArtifact({
+    title: "HTML Dashboard",
+    stack: HTML_STACK,
+    cwd: "/project",
+    root,
+  });
+
+  assert.equal(scaffolded.entry, join(root, "html-dashboard", "index.html"));
+  assert.equal(await readFile(scaffolded.entry, "utf8"), "");
+
+  const manifest = JSON.parse(await readFile(scaffolded.manifestPath, "utf8"));
+  assert.equal(manifest.stack, "html");
+  assert.equal(manifest.entry, "index.html");
+
+  const listed = await listArtifacts(root);
+  assert.deepEqual(
+    listed.map((artifact) => artifact.id),
+    [scaffolded.id],
+  );
+});
+
+test("validateHtmlArtifact formats in place and stays non-blocking", async (t) => {
+  const root = await makeTempRoot(t);
+  const scaffolded = await scaffoldArtifact({
+    title: "HTML Validate",
+    stack: HTML_STACK,
+    cwd: "/project",
+    root,
+  });
+  await writeFile(scaffolded.entry, "<section>   <p>hello</p>    </section>");
+
+  const result = await validateHtmlArtifact(scaffolded.entry);
+  const formatted = await readFile(scaffolded.entry, "utf8");
+
+  assert.equal(result.errors.length, 0);
+  assert.equal(formatted, "<section><p>hello</p></section>\n");
+});
+
+test("validateHtmlArtifact warns on CSP-blocked inline script and handlers", async (t) => {
+  const root = await makeTempRoot(t);
+  const scaffolded = await scaffoldArtifact({
+    title: "HTML CSP",
+    stack: HTML_STACK,
+    cwd: "/project",
+    root,
+  });
+  await writeFile(
+    scaffolded.entry,
+    '<button onclick="go()">Go</button>\n<script>alert(1)</script>\n',
+  );
+
+  const result = await validateHtmlArtifact(scaffolded.entry);
+
+  assert.ok(result.warnings.some((w) => w.code === "csp/inline-script"));
+  assert.ok(result.warnings.some((w) => w.code === "csp/inline-handler"));
+  assert.equal(result.errors.length, 0);
+});
+
+test("validateHtmlArtifact allows a JSON chart spec but warns when missing", async (t) => {
+  const root = await makeTempRoot(t);
+  const withSpec = await scaffoldArtifact({
+    title: "Chart OK",
+    stack: HTML_STACK,
+    cwd: "/project",
+    root,
+  });
+  await writeFile(
+    withSpec.entry,
+    '<figure><canvas data-chart></canvas><script type="application/json" class="pi-chart-spec">{"type":"bar"}</script></figure>',
+  );
+  const okResult = await validateHtmlArtifact(withSpec.entry);
+  assert.ok(!okResult.warnings.some((w) => w.code === "csp/inline-script"));
+  assert.ok(!okResult.warnings.some((w) => w.code === "chart/missing-spec"));
+
+  const missing = await scaffoldArtifact({
+    title: "Chart Missing",
+    stack: HTML_STACK,
+    cwd: "/project",
+    root,
+  });
+  await writeFile(
+    missing.entry,
+    "<figure><canvas data-chart></canvas></figure>",
+  );
+  const missingResult = await validateHtmlArtifact(missing.entry);
+  assert.ok(
+    missingResult.warnings.some((w) => w.code === "chart/missing-spec"),
+  );
+});
+
+test("preview server renders registered html artifacts with CSP", async (t) => {
+  const root = await makeTempRoot(t);
+  const scaffolded = await scaffoldArtifact({
+    title: "HTML Preview",
+    stack: HTML_STACK,
+    cwd: "/project",
+    root,
+  });
+  await writeFile(scaffolded.entry, "<h1>Hello HTML</h1>");
+
+  const artifact = await loadArtifact(scaffolded.id, root);
+  const server = await createPreviewServerState(root);
+  t.after(() => server.close());
+  server.registerArtifact({
+    id: artifact.id,
+    path: artifact.path,
+    entryPath: artifact.entryPath,
+    manifest: artifact.manifest,
+  });
+
+  const url = server.artifactUrl(artifact.id);
+  assert.ok(url);
+
+  const response = await fetch(url);
+  assert.equal(response.headers.get("content-security-policy"), BASELINE_CSP);
+  assert.match(await response.text(), /<h1>Hello HTML<\/h1>/);
+});
+
+test("preview server serves namespaced runtime assets and guards traversal", async (t) => {
+  const root = await makeTempRoot(t);
+  const server = await createPreviewServerState(root);
+  t.after(() => server.close());
+
+  const pico = await fetch(`${server.url}/runtime/pico/pico.classless.min.css`);
+  assert.equal(pico.status, 200);
+  assert.match(pico.headers.get("content-type") ?? "", /text\/css/);
+
+  const chart = await fetch(`${server.url}/runtime/chartjs/chart.umd.js`);
+  assert.equal(chart.status, 200);
+
+  const hydrate = await fetch(`${server.url}/runtime/pi/chart-hydrate.js`);
+  assert.equal(hydrate.status, 200);
+
+  const icons = await fetch(`${server.url}/runtime/pi/icons.svg`);
+  assert.equal(icons.status, 200);
+
+  const unknown = await fetch(`${server.url}/runtime/nope/file.js`);
+  assert.equal(unknown.status, 404);
+
+  const traversal = await fetch(
+    `${server.url}/runtime/pico/../../package.json`,
+  );
+  assert.notEqual(traversal.status, 200);
+});
+
+test("deleteArtifact removes an html bundle", async (t) => {
+  const root = await makeTempRoot(t);
+  const scaffolded = await scaffoldArtifact({
+    title: "HTML Deletable",
+    stack: HTML_STACK,
+    cwd: "/project",
+    root,
+  });
+
+  await deleteArtifact(scaffolded.id, root);
+  assert.equal((await listArtifacts(root)).length, 0);
 });
 
 async function makeTempRoot(t: TestContext): Promise<string> {

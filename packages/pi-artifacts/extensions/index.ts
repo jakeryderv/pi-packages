@@ -13,6 +13,7 @@ import {
   writeManifest,
 } from "./store.ts";
 import { getSessionFile, sessionKeyFromFile } from "./session.ts";
+import { validateHtmlArtifact } from "./validation/html.ts";
 import { validateMarkdownArtifact } from "./validation/markdown.ts";
 import { openViewerWindow, type ViewerWindow } from "./viewer-launcher.ts";
 
@@ -117,8 +118,10 @@ function registerScaffoldTool(pi: ExtensionAPI): void {
       "Returns { id, path, entry, manifestPath }. Writes no content beyond bundle structure.",
     promptSnippet: "Create an empty artifact bundle to author into",
     parameters: Type.Object({
-      type: Type.Literal("markdown", {
-        description: 'Artifact stack. MVP-1 supports "markdown".',
+      type: Type.Union([Type.Literal("markdown"), Type.Literal("html")], {
+        description:
+          'Artifact stack. "markdown" (Prettier/markdownlint/KaTeX pipeline) ' +
+          'or "html" (authored index.html served under the baseline CSP).',
       }),
       title: Type.String({ description: "Human-readable artifact title." }),
     }),
@@ -149,7 +152,7 @@ async function executeScaffoldArtifact(
     content: [
       {
         type: "text" as const,
-        text: `Created markdown artifact ${details.id} at ${details.path}. Author content in ${details.entry}, then call render_artifact with id "${details.id}".`,
+        text: `Created ${input.type} artifact ${details.id} at ${details.path}. Author content in ${details.entry}, then call render_artifact with id "${details.id}".`,
       },
     ],
     details,
@@ -376,6 +379,8 @@ function validateArtifact(
   switch (stack) {
     case "markdown":
       return validateMarkdownArtifact(entryPath);
+    case "html":
+      return validateHtmlArtifact(entryPath);
   }
 
   throw new Error(`Unsupported artifact stack: ${stack}`);

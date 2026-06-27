@@ -1,17 +1,14 @@
 import { createReadStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { createServer, type Server, type ServerResponse } from "node:http";
-import { createRequire } from "node:module";
-import { dirname, extname, resolve } from "node:path";
+import { extname, resolve } from "node:path";
 
+import { renderHtmlPage } from "./html.ts";
 import { renderMarkdownPage } from "./markdown.ts";
 import { isPathInside } from "./path-safety.ts";
+import { RUNTIME_ROOTS } from "./runtime.ts";
 import { artifactsRoot, listArtifacts, loadArtifact } from "./store.ts";
 import type { ArtifactManifest } from "./types.ts";
-
-const require = createRequire(import.meta.url);
-const KATEX_CSS_PATH = require.resolve("katex/dist/katex.min.css");
-const KATEX_DIST_ROOT = dirname(KATEX_CSS_PATH);
 
 export const BASELINE_CSP = [
   "default-src 'self'",
@@ -202,6 +199,11 @@ async function sendRenderedArtifact(
       sendHtml(response, renderMarkdownPage(markdown, artifact.manifest.title));
       return;
     }
+    case "html": {
+      const html = await readFile(artifact.entryPath, "utf8");
+      sendHtml(response, renderHtmlPage(html, artifact.manifest.title));
+      return;
+    }
   }
 }
 
@@ -209,11 +211,17 @@ async function sendRuntimeFile(
   relativePath: string,
   response: ServerResponse,
 ): Promise<void> {
-  const filePath = resolve(KATEX_DIST_ROOT, relativePath);
-  if (
-    !isPathInside(KATEX_DIST_ROOT, filePath) ||
-    filePath === KATEX_DIST_ROOT
-  ) {
+  const slash = relativePath.indexOf("/");
+  const namespace = slash === -1 ? relativePath : relativePath.slice(0, slash);
+  const rest = slash === -1 ? "" : relativePath.slice(slash + 1);
+  const root = RUNTIME_ROOTS[namespace];
+  if (!root || !rest) {
+    sendText(response, 404, "Not found");
+    return;
+  }
+
+  const filePath = resolve(root, rest);
+  if (!isPathInside(root, filePath) || filePath === root) {
     sendText(response, 403, "Forbidden");
     return;
   }

@@ -1,6 +1,6 @@
 import type { ArtifactManifest, ArtifactStack } from "./types.ts";
 
-const SUPPORTED_STACKS = new Set<ArtifactStack>(["markdown"]);
+const SUPPORTED_STACKS = new Set<ArtifactStack>(["markdown", "html"]);
 
 export interface CreateManifestInput {
   id: string;

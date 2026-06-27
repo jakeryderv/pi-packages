@@ -42,6 +42,8 @@ export function entryFileNameForStack(stack: ArtifactStack): string {
   switch (stack) {
     case "markdown":
       return "index.md";
+    case "html":
+      return "index.html";
   }
 }
 

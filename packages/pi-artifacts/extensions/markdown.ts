@@ -165,7 +165,7 @@ blockquote { border-left: 0.25rem solid color-mix(in srgb, CanvasText 25%, Canva
 .pi-alert-caution { --pi-alert-color: #dc2626; }
 .katex-display { overflow-x: auto; overflow-y: hidden; }
 </style>
-<link rel="stylesheet" href="/runtime/katex.min.css">
+<link rel="stylesheet" href="/runtime/katex/katex.min.css">
 </head>
 <body>
 ${body}

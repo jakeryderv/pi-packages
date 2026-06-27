@@ -4,7 +4,10 @@ Status: MVP-1 (markdown loop) + static viewer are complete, preflighted, and
 **published as `@jakeryderv/pi-artifacts@0.1.0`** (npm, public; git tag
 `pi-artifacts-v0.1.0`). This document tracks the forward roadmap.
 
-**Next task: Phase C, Pass 1 — the minimal html vertical slice (see below).**
+**Next task: Phase D — session-reactive viewer (and/or the Phase D pre-gate
+webview spike, runnable anytime).** Phase C (the html stack, Passes 1 and 2) is
+complete and preflighted; `0.2.0` is staged in `package.json` and awaiting an
+`npm publish`.
 
 ## Completed — MVP-1 + static viewer
 
@@ -90,11 +93,26 @@ into the existing store/server/tools end-to-end with a trivial renderer — befo
 any shared runtime, validation gate, or CSP-for-JS decisions. Defer the heavier
 work (Pass 2 below) until the slice is green.
 
-#### Pass 1 — minimal html vertical slice (NEXT)
+#### Pass 1 — minimal html vertical slice (DONE)
 
 Goal: scaffold → author `index.html` → render → preview → list/delete, all
 working for html, with the smallest possible html render path. No Alpine, no
 charts, no icons, no injected JS yet.
+
+Shipped: `ArtifactStack` is `"markdown" | "html"`; `manifest.ts` accepts
+`"html"`; `entryFileNameForStack` returns `index.html` for html;
+`scaffold_artifact`'s `type` is a `markdown | html` union. New
+`extensions/html.ts` (`renderHtmlPage` — wraps an authored fragment in the
+shared page shell, serves a full document verbatim) and
+`extensions/validation/html.ts` (`validateHtmlArtifact` — reads the entry, no
+findings yet). `render_artifact`/`sendRenderedArtifact` route on
+`manifest.stack`. html previews flow through the unchanged localhost server
+under the existing `BASELINE_CSP` (`script-src 'self'` already blocks inline JS,
+so the CSP-for-JS decision stays deferred to Pass 2). Tests: 6 added
+(render-shell/verbatim, scaffold, validate, preview-with-CSP, delete); markdown
+suite still green; full preflight clean. Landed on `main`, unreleased.
+
+Original Pass 1 checklist (all done):
 
 1. Allow `"html"` as a `stack`/`type`. Touch `extensions/types.ts` (stack union)
    and `extensions/manifest.ts` (`isArtifactManifest` accepts `"html"`,
@@ -118,16 +136,49 @@ Respect the decoupling invariants above: the html path stays HTTP-served HTML +
 assets, with no browser-only assumptions, so the browser↔webview choice stays
 cheap to defer.
 
-#### Pass 2 — shared runtime + gate + skill (after Pass 1 is green)
+#### Pass 2 — shared runtime + gate + skill (DONE)
 
-1. Shared html runtime injected at render time (semantic CSS base, Alpine,
-   one charting lib, icons), served from `/runtime`, never vendored per bundle.
-2. html validation gate (Prettier + HTMLHint or similar + runtime-capability check).
-3. html authoring skill.
-4. Make the deliberate CSP decision for runtime-injected JS (Alpine/charts
-   execute in the browser surface — this is the first point html is meaningfully
-   more dangerous than markdown; settle sandbox/CSP posture before injecting JS).
-5. Bump a minor version and re-publish once the runtime lane is usable.
+**CSP decision (settled):** keep the strict baseline (`script-src 'self'`, no
+`unsafe-eval`) and adopt a **no-framework** posture instead of Alpine. Reasoning:
+Alpine is the worst of the tradeoff here — its standard build needs `unsafe-eval`
+(weakening the very sandbox that makes running agent-authored html safe), and its
+CSP-safe build is a restricted dialect the model authors unreliably. Plain
+HTML/CSS is the most-trained, most-predictable target for a one-shot generator,
+and the `/runtime` seam stays open to add a tiny vanilla-JS helper later if a
+real interactivity need appears. This collapsed the CSP gate to "keep strict."
+
+**Charting (settled): Chart.js**, configured via a CSP-clean JSON-spec
+convention (`<canvas data-chart>` + sibling
+`<script type="application/json" class="pi-chart-spec">`; a single served
+hydration script reads the spec and renders). JSON is data, not code, so it is
+allowed under the strict CSP, and emitting a JSON spec plays to the agent's
+strengths. Chosen over Vega-Lite (heavier, grammar authored less reliably) and
+over deferring charts (loses hover/tooltip/resize and forces hand-computed
+scales).
+
+Shipped:
+
+1. Shared html runtime served from a **namespaced `/runtime/<ns>/` registry**
+   (`extensions/runtime.ts`): `pico` (Pico classless CSS), `chartjs` (Chart.js
+   UMD), `pi` (this package's `chart-hydrate.js` + `icons.svg`), and the
+   existing `katex`. Resolved via `require.resolve`, never vendored per bundle.
+   `renderHtmlPage` injects Pico + Chart.js + the hydration script into the
+   page shell. A full authored document is served verbatim (opts out).
+2. html validation gate (`extensions/validation/html.ts`): Prettier (autofix) +
+   HTMLHint (warn) + CSP capability checks (`csp/inline-script`,
+   `csp/inline-handler`, `csp/javascript-url`) + `chart/missing-spec`. All
+   advisory; html is served regardless. HTMLHint added to `dependencies`.
+3. html authoring skill: `skills/artifacts-authoring/SKILL.md` HTML stack
+   section rewritten (Pico mapping, strict-CSP rules, CSS-only interactivity,
+   the Chart.js JSON-spec shape, icon ids).
+4. CSP decision settled as above (no JS framework; strict baseline holds).
+5. Version bumped to `0.2.0` (description/keywords updated). **Publish is
+   intentionally left to a manual `npm publish` step.**
+
+Tests: 26 total (was 23) — runtime injection in the shell, namespaced runtime
+serving + traversal guard, Prettier autofix, CSP warnings, chart-spec
+presence/absence. Full preflight clean; `npm pack --dry-run` ships the runtime
+assets and nothing else.
 
 ### Phase D pre-gate — Viewer runtime spike (research only)
 
