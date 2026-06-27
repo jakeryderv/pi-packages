@@ -180,21 +180,60 @@ serving + traversal guard, Prettier autofix, CSP warnings, chart-spec
 presence/absence. Full preflight clean; `npm pack --dry-run` ships the runtime
 assets and nothing else.
 
-### Phase D pre-gate — Viewer runtime spike (research only)
+### Phase D pre-gate — Viewer runtime spike (RESOLVED 2026-06-27)
 
-Time-boxed, read-only investigation before building D. The answer can collapse
-the decision entirely:
+Time-boxed, read-only investigation completed. **Outcome: confirmed
+"server + browser + SSE" as the surface. No bundled webview.** The decision is
+settled and Phase D proceeds unambiguously.
 
-- Can a Pi extension host a native/embedded webview at all? (Pi is a TUI harness
-  — this is genuinely uncertain.)
-- Is there a viable Pi-native or general binding, and what is its install,
-  cross-platform, and `/resume` `/new` `/fork` lifecycle cost?
-- Does it work in SSH/headless/container sessions, or only with a local display?
+**1. Can a Pi extension host a native/embedded webview?**
+Not through any first-class API. Reviewed Pi's extension/SDK surface
+(`docs/extensions.md`, `tui.md`, `rpc.md`, `windows.md`, the bundled examples):
+the only UI affordances an extension gets are terminal-side —
+`ctx.ui.notify/select/confirm/input`, footer status, `setWidget`, and full TUI
+components via `ctx.ui.custom()` (these render **text lines**, not HTML/web
+content). There is no webview/BrowserWindow/iframe host, and zero references to
+webview/Electron/Tauri anywhere in Pi's docs. Pi is a terminal harness; it has
+no display surface to embed web content into.
 
-Outcome: confirm "server + browser + SSE" (current trajectory) or surface a
-credible optional webview front-end. If no clean webview option exists for Pi
-extensions, the decision is settled as server + browser and D proceeds
-unambiguously. Runnable anytime — even alongside Phase C.
+**2. Could an extension spawn its own native webview anyway?**
+Technically yes, via a third-party napi addon (e.g. `@nativewindow/webview`,
+`webviewjs`) that wraps the OS engine (WebKitGTK / WebView2 / WKWebView). But
+this violates this package's settled constraints:
+
+- **Native dependency + build/prebuild toolchain** — breaks the
+  "ship `.ts`, jiti loads it, no build step" rule and the
+  `npm install --omit=dev` runtime-deps model. Prebuilt binaries per
+  platform/arch are a maintenance and trust burden.
+- **Lifecycle cost** — the addon window would need explicit create/destroy
+  wired into `session_start`/`session_shutdown`/`/resume`/`/fork`, duplicating
+  what the launcher already does for the browser app-window, but with native
+  crash/leak risk instead of a detached child process.
+
+**3. SSH / headless / container portability — the decisive factor.**
+Native webviews are graphical and **require an active display**; over SSH or in
+headless containers they fail without a virtual framebuffer (Xvfb) or a remote
+display-streaming shim. That directly breaks the terminal-agent workflow a Pi
+package must support. The current model — bind `localhost`, open a browser (or
+just print the URL) — degrades gracefully: on a remote box you port-forward
+`localhost:<port>` and view locally; no display assumed. This is the
+server-first posture's whole point, and it is the reason a webview stays off.
+
+**Conclusion.** Everything Phase D needs — session-scoped lists, live updates,
+later bidirectional actions — is reachable with the existing localhost server
+plus **Server-Sent Events** (`text/event-stream`, an `EventSource` in the page
+shell, a set of held-open responses broadcast to on render/session change). SSE
+is a few lines of stdlib `http`, no new dependency, CSP-compatible under
+`connect-src 'self'` (already in `BASELINE_CSP`), and unidirectional
+server→viewer which is exactly the push direction D needs. A webview remains a
+possible _optional_ front-end later where a local display exists, reusing the
+same transport seam (invariant 2) — never a replacement that breaks remote use.
+
+**Implications for building D:** add an SSE endpoint behind the transport seam;
+keep the renderer/store unaware of it (invariants 1 & 3). `connect-src 'self'`
+is already present, so no CSP change. The open Phase A `/resume` smoke test
+(no leaked servers) should be confirmed first, since D pushes over the
+session-lifecycle boundary it exercises.
 
 ### Phase D — Session-reactive viewer
 
