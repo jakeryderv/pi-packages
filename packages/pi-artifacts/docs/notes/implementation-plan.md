@@ -268,6 +268,29 @@ Tests: 29 total (was 26) — session filtering, `?all` override, unscoped
 fallback, SSE stream + broadcast + clean teardown. Full preflight clean.
 Version bumped to 0.3.0; publish left as a manual step.
 
+**Viewer-mode setting (0.4.0).** Follow-up UX: a persisted preference for how
+`/viewer` opens, so users aren't re-exporting an env var each session. New
+`extensions/viewer-config.ts` reads/writes `{ viewerMode }` to
+`~/.pi/artifacts/config.json` (rebrand-safe; never throws on missing/corrupt).
+New `/viewer-mode app|browser|off` command sets it; bare invocation reports the
+current value. Launch precedence is `PI_ARTIFACTS_VIEWER` env > saved setting >
+default `app`; `openViewerWindow` gained a `none` short-circuit (print URL only,
+useful for SSH/headless). App mode stays the default — this only makes the
+choice discoverable and sticky.
+
+**Render auto-open (0.4.0).** Default-on: a successful `render_artifact`
+auto-shows the artifact. If a viewer window is already open, the server pushes
+an SSE `navigate` event (new `broadcastNavigate`) and the window switches to the
+freshly rendered artifact — no new window, no flicker on the edit→render loop;
+otherwise it launches one pointed at the artifact. Honors the saved viewer mode
+(`none`/off launches nothing, so SSH/headless stays quiet). Toggle with a new
+`/viewer-auto on|off` command; `autoOpen` persists in the same config file
+(merge-on-write so it coexists with `viewerMode`, defaults to `true`). The
+live-reload client gained a `navigate` handler (switches via `location.assign`
+only when not already on the target). Tests: 33 total (auto-open default/
+round-trip, `navigate` SSE event). Version remains 0.4.0 (bundled before
+publish).
+
 ### Phase E — Export
 
 Single-file export: inlined HTML first, then PDF / md.

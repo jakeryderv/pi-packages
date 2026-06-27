@@ -49,6 +49,11 @@ export interface PreviewServerState {
    * changes.
    */
   broadcastUpdate: (artifactId?: string) => void;
+  /**
+   * Push a `navigate` event so any open viewer switches to `pathname`
+   * (e.g. a freshly rendered artifact). Powers auto-open's window reuse.
+   */
+  broadcastNavigate: (pathname: string) => void;
   close: () => Promise<void>;
 }
 
@@ -116,6 +121,9 @@ export async function createPreviewServerState(
     },
     broadcastUpdate(artifactId) {
       broadcast(sseClients, "update", artifactId);
+    },
+    broadcastNavigate(pathname) {
+      broadcast(sseClients, "navigate", undefined, pathname);
     },
     // SSE responses are held open forever; they must be ended here or
     // `server.close()` never completes (this preserves the verified
@@ -221,9 +229,16 @@ function broadcast(
   clients: Set<ServerResponse>,
   event: string,
   artifactId?: string,
+  path?: string,
 ): void {
-  const data = JSON.stringify(artifactId ? { id: artifactId } : {});
-  const frame = `event: ${event}\ndata: ${data}\n\n`;
+  const payload: { id?: string; path?: string } = {};
+  if (artifactId) {
+    payload.id = artifactId;
+  }
+  if (path) {
+    payload.path = path;
+  }
+  const frame = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
   for (const client of clients) {
     client.write(frame);
   }

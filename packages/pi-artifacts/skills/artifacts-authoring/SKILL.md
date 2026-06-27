@@ -17,7 +17,12 @@ Use this skill when creating or revising `pi-artifacts` bundles.
 4. If render returns errors, fix the same entry file and call `render_artifact({ id })` again.
 5. If render returns warnings, rendering still succeeded; decide whether the portability/style feedback matters for the user.
 6. Use `/viewer` to open the artifact gallery (a dedicated app window when a
-   Chromium-family browser is available, otherwise the default browser).
+   Chromium-family browser is available, otherwise the default browser). The
+   gallery and open artifact pages live-reload on render/delete. Use
+   `/viewer-mode app|browser|off` to set and persist how the viewer opens
+   (`off` just prints the URL, e.g. for SSH/headless). By default a successful
+   render auto-opens the artifact (switching an already-open window to it);
+   toggle this with `/viewer-auto on|off`.
 7. Use `list_artifacts` to discover existing bundles, and `delete_artifact({ id })` to remove one.
 
 The scaffold writes only structure:

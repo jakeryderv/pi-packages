@@ -19,12 +19,23 @@ export interface ViewerWindow {
  * user's default browser — without any native dependency or build step.
  *
  * Falls back to the default browser, then to nothing, when no Chromium-family
- * browser is available. App mode can be forced off with
- * `PI_ARTIFACTS_VIEWER=browser`, and the binary overridden with
- * `PI_ARTIFACTS_BROWSER`.
+ * browser is available.
+ *
+ * Mode precedence: `PI_ARTIFACTS_VIEWER` env override > the `preferred`
+ * argument (a persisted user setting) > the built-in default (`app`). The
+ * binary used for app mode can be overridden with `PI_ARTIFACTS_BROWSER`.
  */
-export async function openViewerWindow(url: string): Promise<ViewerWindow> {
-  if (env.PI_ARTIFACTS_VIEWER === "browser") {
+export async function openViewerWindow(
+  url: string,
+  preferred?: ViewerWindowMode,
+): Promise<ViewerWindow> {
+  const mode = resolveViewerMode(preferred);
+
+  if (mode === "none") {
+    return { mode: "none", close: async () => {} };
+  }
+
+  if (mode === "browser") {
     return openDefaultBrowser(url);
   }
 
@@ -37,6 +48,14 @@ export async function openViewerWindow(url: string): Promise<ViewerWindow> {
   }
 
   return openDefaultBrowser(url);
+}
+
+function resolveViewerMode(preferred?: ViewerWindowMode): ViewerWindowMode {
+  const fromEnv = env.PI_ARTIFACTS_VIEWER;
+  if (fromEnv === "browser" || fromEnv === "app" || fromEnv === "none") {
+    return fromEnv;
+  }
+  return preferred ?? "app";
 }
 
 export function buildAppWindowArgs(url: string, profileDir: string): string[] {

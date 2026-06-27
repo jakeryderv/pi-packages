@@ -15,7 +15,18 @@ import {
 import { getSessionFile, sessionKeyFromFile } from "./session.ts";
 import { validateHtmlArtifact } from "./validation/html.ts";
 import { validateMarkdownArtifact } from "./validation/markdown.ts";
-import { openViewerWindow, type ViewerWindow } from "./viewer-launcher.ts";
+import {
+  openViewerWindow,
+  type ViewerWindow,
+  type ViewerWindowMode,
+} from "./viewer-launcher.ts";
+import {
+  isViewerMode,
+  readAutoOpen,
+  readViewerMode,
+  writeAutoOpen,
+  writeViewerMode,
+} from "./viewer-config.ts";
 
 interface ScaffoldArtifactParams {
   type: string;
@@ -41,7 +52,8 @@ interface PreviewServerAccessor {
 }
 
 interface ViewerWindowManager {
-  open: (url: string) => Promise<ViewerWindow>;
+  open: (url: string, preferred?: ViewerWindowMode) => Promise<ViewerWindow>;
+  isOpen: () => boolean;
   close: () => Promise<void>;
 }
 
@@ -51,20 +63,26 @@ export default function (pi: ExtensionAPI) {
 
   registerPreviewLifecycle(pi, previewServer, viewerWindow);
   registerScaffoldTool(pi);
-  registerRenderTool(pi, previewServer);
+  registerRenderTool(pi, previewServer, viewerWindow);
   registerListTool(pi);
   registerDeleteTool(pi, previewServer);
   registerViewerCommand(pi, previewServer, viewerWindow);
+  registerViewerModeCommand(pi);
+  registerViewerAutoCommand(pi);
 }
 
 function createViewerWindowManager(): ViewerWindowManager {
   let current: ViewerWindow | undefined;
 
   return {
-    async open(url) {
+    async open(url, preferred) {
       await current?.close();
-      current = await openViewerWindow(url);
+      current = await openViewerWindow(url, preferred);
       return current;
+    },
+    isOpen() {
+      // A "none" window never actually launched anything to reuse.
+      return current !== undefined && current.mode !== "none";
     },
     async close() {
       await current?.close();
@@ -169,6 +187,7 @@ async function executeScaffoldArtifact(
 function registerRenderTool(
   pi: ExtensionAPI,
   previewServer: PreviewServerAccessor,
+  viewerWindow: ViewerWindowManager,
 ): void {
   pi.registerTool({
     name: "render_artifact",
@@ -186,14 +205,45 @@ function registerRenderTool(
       return executeRenderArtifact(
         params as RenderArtifactParams,
         previewServer,
+        viewerWindow,
       );
     },
   });
 }
 
+/**
+ * Auto-open behavior (default on; toggle with /viewer-auto): after a render,
+ * show the artifact. Reuse an already-open window by pushing a `navigate`
+ * event (no new window, no flicker); otherwise launch one pointed at the
+ * artifact. Honors the saved viewer mode — a "none"/off preference launches
+ * nothing, so SSH/headless stays quiet.
+ */
+async function maybeAutoOpen(
+  server: PreviewServerState,
+  viewerWindow: ViewerWindowManager,
+  artifactId: string,
+  artifactUrl: string,
+): Promise<void> {
+  if (!(await readAutoOpen())) {
+    return;
+  }
+
+  if (viewerWindow.isOpen()) {
+    server.broadcastNavigate(`/artifacts/${encodeURIComponent(artifactId)}/`);
+    return;
+  }
+
+  const preferred = await readViewerMode();
+  if (preferred === "none") {
+    return;
+  }
+  await viewerWindow.open(artifactUrl, preferred);
+}
+
 async function executeRenderArtifact(
   input: RenderArtifactParams,
   previewServer: PreviewServerAccessor,
+  viewerWindow: ViewerWindowManager,
 ) {
   try {
     const artifact = await loadArtifact(input.id);
@@ -229,6 +279,9 @@ async function executeRenderArtifact(
     });
     const url = server.artifactUrl(artifact.id);
     server.broadcastUpdate(artifact.id);
+    if (url) {
+      await maybeAutoOpen(server, viewerWindow, artifact.id, url);
+    }
 
     return {
       content: [
@@ -361,11 +414,79 @@ function registerViewerCommand(
         return;
       }
 
-      const window = await viewerWindow.open(server.viewerUrl);
+      const preferred = await readViewerMode();
+      const window = await viewerWindow.open(server.viewerUrl, preferred);
       ctx.ui.notify(
         `${viewerOpenMessage(window.mode, server.viewerUrl)} Store: ${artifactsRoot()}`,
         "info",
       );
+    },
+  });
+}
+
+function registerViewerModeCommand(pi: ExtensionAPI): void {
+  pi.registerCommand("viewer-mode", {
+    description:
+      "Set how /viewer opens: app (dedicated window), browser, or off (print URL). No argument shows the current setting.",
+    handler: async (args, ctx) => {
+      const requested = (args ?? "").trim().toLowerCase();
+
+      if (!requested) {
+        const current = (await readViewerMode()) ?? "app (default)";
+        ctx.ui.notify(
+          `Viewer mode: ${current}. Set with /viewer-mode app|browser|off.`,
+          "info",
+        );
+        return;
+      }
+
+      // Accept "off" as a friendly alias for the "none" launch mode.
+      const normalized = requested === "off" ? "none" : requested;
+      if (!isViewerMode(normalized)) {
+        ctx.ui.notify(
+          `Unknown viewer mode "${requested}". Use app, browser, or off.`,
+          "warning",
+        );
+        return;
+      }
+
+      await writeViewerMode(normalized);
+      const label = normalized === "none" ? "off (print URL only)" : normalized;
+      ctx.ui.notify(`Viewer mode set to ${label}.`, "info");
+    },
+  });
+}
+
+function registerViewerAutoCommand(pi: ExtensionAPI): void {
+  pi.registerCommand("viewer-auto", {
+    description:
+      "Toggle whether rendering auto-opens the artifact in the viewer: on or off. No argument shows the current setting.",
+    handler: async (args, ctx) => {
+      const requested = (args ?? "").trim().toLowerCase();
+
+      if (!requested) {
+        const enabled = await readAutoOpen();
+        ctx.ui.notify(
+          `Render auto-open is ${enabled ? "on" : "off"}. Set with /viewer-auto on|off.`,
+          "info",
+        );
+        return;
+      }
+
+      const enable =
+        requested === "on" || requested === "true" || requested === "yes";
+      const disable =
+        requested === "off" || requested === "false" || requested === "no";
+      if (!enable && !disable) {
+        ctx.ui.notify(
+          `Unknown value "${requested}". Use /viewer-auto on or off.`,
+          "warning",
+        );
+        return;
+      }
+
+      await writeAutoOpen(enable);
+      ctx.ui.notify(`Render auto-open ${enable ? "on" : "off"}.`, "info");
     },
   });
 }

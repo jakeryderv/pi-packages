@@ -15,19 +15,27 @@
  *
  * The id is read from the script tag's data attribute (currentScript is null
  * for deferred scripts, so we query by attribute instead).
+ *
+ * Also handles a `navigate` event: when auto-open reuses an already-open
+ * window, the server pushes the path of the freshly rendered artifact so the
+ * window switches to it instead of spawning a new one.
  */
 (() => {
   var tag = document.querySelector("script[data-artifact-id]");
   var myId = tag ? tag.getAttribute("data-artifact-id") : null;
 
-  var es = new EventSource("/events");
-  es.addEventListener("update", (event) => {
-    var changedId = null;
+  var parse = (event) => {
     try {
-      changedId = JSON.parse(event.data || "{}").id || null;
+      return JSON.parse(event.data || "{}") || {};
     } catch (error) {
-      changedId = null;
+      return {};
     }
+  };
+
+  var es = new EventSource("/events");
+
+  es.addEventListener("update", (event) => {
+    var changedId = parse(event).id || null;
 
     if (myId === null) {
       // Gallery: any change is relevant.
@@ -37,6 +45,14 @@
     // Artifact page: reload only when this artifact changed.
     if (changedId === myId) {
       location.reload();
+    }
+  });
+
+  es.addEventListener("navigate", (event) => {
+    var target = parse(event).path;
+    // Only move if we're not already showing the target.
+    if (target && location.pathname !== target) {
+      location.assign(target);
     }
   });
 })();

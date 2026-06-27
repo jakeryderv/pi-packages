@@ -30,6 +30,13 @@ import {
 import { validateHtmlArtifact } from "../extensions/validation/html.ts";
 import { validateMarkdownArtifact } from "../extensions/validation/markdown.ts";
 import {
+  isViewerMode,
+  readAutoOpen,
+  readViewerMode,
+  writeAutoOpen,
+  writeViewerMode,
+} from "../extensions/viewer-config.ts";
+import {
   buildAppWindowArgs,
   openViewerWindow,
 } from "../extensions/viewer-launcher.ts";
@@ -61,6 +68,79 @@ test("openViewerWindow uses app mode when a Chromium-family browser resolves", a
       process.env.PI_ARTIFACTS_BROWSER = previous;
     }
   }
+});
+
+test("openViewerWindow honors preferred=none and the env override beats it", async () => {
+  const previousViewer = process.env.PI_ARTIFACTS_VIEWER;
+  delete process.env.PI_ARTIFACTS_VIEWER;
+  try {
+    // Persisted preference "none" -> never launches, just reports the URL.
+    const off = await openViewerWindow("http://127.0.0.1:9/viewer", "none");
+    assert.equal(off.mode, "none");
+    await off.close();
+
+    // Env override wins over the preferred argument.
+    process.env.PI_ARTIFACTS_VIEWER = "none";
+    const overridden = await openViewerWindow(
+      "http://127.0.0.1:9/viewer",
+      "app",
+    );
+    assert.equal(overridden.mode, "none");
+    await overridden.close();
+  } finally {
+    if (previousViewer === undefined) {
+      delete process.env.PI_ARTIFACTS_VIEWER;
+    } else {
+      process.env.PI_ARTIFACTS_VIEWER = previousViewer;
+    }
+  }
+});
+
+test("viewer-config persists and validates the viewer mode", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-viewercfg-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const path = join(dir, "config.json");
+
+  // Missing file -> no preference.
+  assert.equal(await readViewerMode(path), undefined);
+
+  await writeViewerMode("browser", path);
+  assert.equal(await readViewerMode(path), "browser");
+
+  await writeViewerMode("none", path);
+  assert.equal(await readViewerMode(path), "none");
+
+  // Corrupt / unknown values -> treated as no preference, never throws.
+  await writeFile(path, '{"viewerMode":"bogus"}');
+  assert.equal(await readViewerMode(path), undefined);
+  await writeFile(path, "not json");
+  assert.equal(await readViewerMode(path), undefined);
+
+  assert.equal(isViewerMode("app"), true);
+  assert.equal(isViewerMode("browser"), true);
+  assert.equal(isViewerMode("none"), true);
+  assert.equal(isViewerMode("off"), false);
+});
+
+test("viewer-config auto-open defaults on and round-trips with viewerMode", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-autoopen-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const path = join(dir, "config.json");
+
+  // Unset -> default on.
+  assert.equal(await readAutoOpen(path), true);
+
+  await writeAutoOpen(false, path);
+  assert.equal(await readAutoOpen(path), false);
+
+  // Writing one setting must not clobber the other.
+  await writeViewerMode("browser", path);
+  assert.equal(await readAutoOpen(path), false);
+  assert.equal(await readViewerMode(path), "browser");
+
+  await writeAutoOpen(true, path);
+  assert.equal(await readAutoOpen(path), true);
+  assert.equal(await readViewerMode(path), "browser");
 });
 
 test("slugifyTitle normalizes titles into stable ids", () => {
@@ -417,6 +497,16 @@ test("events endpoint streams an update on broadcast and ends on close", async (
   assert.match(received, /event: update/);
   // The affected artifact id rides along so artifact pages can self-filter.
   assert.match(received, /data: \{"id":"some-artifact"\}/);
+
+  // A navigate event carries the target path (auto-open window reuse).
+  server.broadcastNavigate("/artifacts/some-artifact/");
+  while (!received.includes("event: navigate")) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    received += decoder.decode(value, { stream: true });
+  }
+  assert.match(received, /event: navigate/);
+  assert.match(received, /data: \{"path":"\/artifacts\/some-artifact\/"\}/);
 
   // close() must end held-open SSE responses so the server can shut down.
   await server.close();

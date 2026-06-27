@@ -60,8 +60,18 @@ bundles.
   Events as you render or delete. When a
   Chromium-family browser is available it opens in a dedicated, chromeless app
   window (isolated profile, closed on session shutdown); otherwise it falls back
-  to your default browser. Override with `PI_ARTIFACTS_VIEWER=browser` (force a
-  normal tab) or `PI_ARTIFACTS_BROWSER=<path>` (choose the browser binary).
+  to your default browser.
+- **`/viewer-mode`** command — set how `/viewer` opens and remember it across
+  sessions: `app` (dedicated window, default), `browser` (your default browser),
+  or `off` (just print the URL — handy over SSH/headless). Run with no argument
+  to see the current setting. One-off overrides: `PI_ARTIFACTS_VIEWER=app|browser|none`
+  (env wins over the saved setting) and `PI_ARTIFACTS_BROWSER=<path>` (choose the
+  app-mode browser binary).
+- **`/viewer-auto`** command — toggle whether a successful render auto-shows the
+  artifact: `on` (default) or `off`. When on, rendering opens the viewer if it
+  isn't already; if a window is already open it switches to the freshly rendered
+  artifact (no new window). Honors `/viewer-mode off` (stays quiet on
+  SSH/headless). Run with no argument to see the current setting.
 - **`artifacts-authoring`** skill — how to author portable markdown and html artifacts.
 
 Artifacts are stored as content-only bundles under `~/.pi/artifacts/<id>/`
