@@ -2,15 +2,16 @@
 
 A design and build plan for a **Pi coding-agent extension** that lets the agent produce rich, visual artifacts — documents, diagrams, charts, and interactive UIs — rendered in a session-reactive viewer and stored as isolated, portable bundles.
 
-> [!NOTE]
-> The **viewer is the unifying surface**: it renders every artifact type, lets you switch between any artifact present in one place, and exports any of them to supported formats. The "stacks" below (markdown, html) are just the artifact _types_ the viewer handles today — the set is designed to grow. Cross-renderer portability (Obsidian / GitHub) is a bonus property of markdown artifacts, not a wall between types.
+**Historical context:** This document contains original design notes. The current implementation intentionally diverges from the early Alpine/author-JS direction: html artifacts use a no-framework, no-authored-JS model with Pico CSS, Chart.js JSON specs, icons, and CSS-only interactivity. See [`../api.md`](../api.md) and [`../roadmap.md`](../roadmap.md) for the current contract and roadmap.
+
+**Viewer principle:** The viewer is the unifying surface: it renders every artifact type, lets you switch between any artifact present in one place, and exports any of them to supported formats. The "stacks" below (markdown, html) are just the artifact _types_ the viewer handles today — the set is designed to grow. Cross-renderer portability (Obsidian / GitHub) is a bonus property of markdown artifacts, not a wall between types.
 
 ## At a glance
 
 - **One viewer, many artifact types.** A unified, session-reactive viewer renders every artifact, lets you switch between any present in one place, and exports to supported formats. Two types today — `markdown` and `html` — extensible to more.
 - **Two lanes today:** `markdown` is the document/note lane (portable, also opens in Obsidian/GitHub); `html` is the dynamic "generated-UI" lane.
-- **Shared runtimes, content-only bundles:** the markdown renderer and a curated html runtime (semantic CSS + Alpine + charts + icons) live in the viewer, installed once — so artifacts carry only their content, and the agent writes less. Inlined on export.
-- **Authoring stays declarative:** enriched markdown for documents; semantic HTML + a little Alpine for UI — no build step, no per-bundle vendoring.
+- **Shared runtimes, content-only bundles:** the markdown renderer and a curated html runtime (semantic CSS + charts + icons) live in the viewer, installed once — so artifacts carry only their content, and the agent writes less. Inlined on export.
+- **Authoring stays declarative:** enriched markdown for documents; semantic HTML, CSS-only interactivity, and JSON chart specs for UI — no build step, no per-bundle vendoring.
 - **Diagrams:** Mermaid (native, editable). Beyond Mermaid, embed a pre-rendered **SVG** via standard `![]()`.
 - **Storage:** each artifact is its own content-only directory (blank entry + `assets/` + manifest), created by a scaffold that writes no content — just structure, with shared capabilities provided by the viewer.
 - **Pi integration:** global session-aware store at `~/.pi/artifacts/`, the unified **session-reactive viewer** that live-updates as you switch sessions, and integrated export to any supported format.
@@ -26,10 +27,10 @@ The centerpiece is a **unified viewer** that renders every artifact regardless o
 
 Two types exist today, chosen by output shape:
 
-| Type (`stack`) | Entry        | Scope                                                                                 | Picks it for                                             |
-| -------------- | ------------ | ------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| **markdown**   | `index.md`   | Enriched markdown — prose, math, tables, Mermaid, embedded SVG                        | Document/note lane; also portable to Obsidian/GitHub     |
-| **html**       | `index.html` | Generated UI on a shared runtime (semantic CSS, Alpine, charts, icons), no build step | Dynamic-UI lane; dashboards, tools, forms, bespoke views |
+| Type (`stack`) | Entry        | Scope                                                                          | Picks it for                                             |
+| -------------- | ------------ | ------------------------------------------------------------------------------ | -------------------------------------------------------- |
+| **markdown**   | `index.md`   | Enriched markdown — prose, math, tables, Mermaid, embedded SVG                 | Document/note lane; also portable to Obsidian/GitHub     |
+| **html**       | `index.html` | Generated UI on a shared runtime (semantic CSS, charts, icons), no authored JS | Dynamic-UI lane; dashboards, tools, forms, bespoke views |
 
 _("Type" and "stack" are used interchangeably throughout; `stack` is the manifest field name, "type" the concept.)_
 

@@ -2,6 +2,12 @@ import { createRequire } from "node:module";
 
 import * as katex from "katex";
 
+import {
+  artifactChromeStyles,
+  renderArtifactToolbar,
+  type ArtifactPageChrome,
+} from "./viewer-ui.ts";
+
 const require = createRequire(import.meta.url);
 
 type MarkdownItRenderer = {
@@ -138,10 +144,13 @@ interface MathReplacement {
 export function renderMarkdownPage(
   markdown: string,
   title: string,
-  artifactId?: string,
+  artifact?: string | ArtifactPageChrome,
 ): string {
   const body = renderMarkdownBody(markdown);
   const escapedTitle = escapeHtml(title);
+  const artifactId = typeof artifact === "string" ? artifact : artifact?.id;
+  const toolbar =
+    typeof artifact === "object" ? renderArtifactToolbar(artifact) : "";
   const liveReload = artifactId
     ? `<script src="/runtime/pi/viewer-live.js" data-artifact-id="${escapeHtml(artifactId)}" defer></script>\n`
     : "";
@@ -171,10 +180,12 @@ blockquote { border-left: 0.25rem solid color-mix(in srgb, CanvasText 25%, Canva
 .pi-alert-warning { --pi-alert-color: #d97706; }
 .pi-alert-caution { --pi-alert-color: #dc2626; }
 .katex-display { overflow-x: auto; overflow-y: hidden; }
+${artifactChromeStyles()}
 </style>
 <link rel="stylesheet" href="/runtime/katex/katex.min.css">
 ${liveReload}</head>
 <body>
+${toolbar}
 ${body}
 </body>
 </html>

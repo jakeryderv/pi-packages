@@ -28,9 +28,14 @@ Use this skill when creating or revising `pi-artifacts` bundles.
 The scaffold writes only structure:
 
 ```text
-<artifact>/
+markdown artifact:
   manifest.json
   index.md
+  assets/
+
+html artifact:
+  manifest.json
+  index.html
   assets/
 ```
 
@@ -101,10 +106,12 @@ localhost viewer. A shared runtime is injected automatically from `/runtime` —
 ### Security model — strict CSP (read before authoring)
 
 Artifacts render under a strict Content-Security-Policy (`script-src 'self'`).
-The author's html may **not** execute JavaScript. The following are blocked by
-the browser and flagged as warnings by the validation gate:
+The author's html may **not** execute JavaScript. The following are blocked or
+ignored by the preview server/browser and flagged as warnings by the validation
+gate:
 
 - Inline `<script>` with a body (e.g. `<script>doThing()</script>`).
+- Authored `<script src="...">` files such as `assets/app.js`.
 - Inline event handlers (`onclick=`, `onload=`, any `on*=`).
 - `javascript:`-scheme URLs in `href`/`src`.
 
@@ -170,8 +177,9 @@ is served regardless):
 
 - Prettier formats `index.html` in place.
 - HTMLHint findings are warnings (`htmlhint/*`).
-- CSP warnings (`csp/inline-script`, `csp/inline-handler`, `csp/javascript-url`)
-  flag JS that the browser will block — fix these or the behavior is silently dropped.
+- CSP warnings (`csp/inline-script`, `csp/script-src`, `csp/inline-handler`,
+  `csp/javascript-url`) flag JS that the browser/server will block — fix these
+  or the behavior is silently dropped.
 - `chart/missing-spec` warns a chart canvas has no JSON config.
 
 Treat `details.warnings` as advisory, but CSP warnings indicate the page will

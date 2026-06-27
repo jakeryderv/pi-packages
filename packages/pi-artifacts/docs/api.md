@@ -1,7 +1,8 @@
 # pi-artifacts API Contract
 
-This document pins the MVP-1 tool and manifest shapes before implementation.
-The extension may add fields later, but existing fields should remain stable.
+This document pins the current tool, command, manifest, validation, and preview
+server contracts for `@jakeryderv/pi-artifacts`. Fields may be added later, but
+existing fields should remain stable.
 
 ## `scaffold_artifact`
 
@@ -14,7 +15,10 @@ Input:
 }
 ```
 
-MVP-1 accepts only `"markdown"`. Later milestones add `"html"`.
+`type` accepts:
+
+- `"markdown"` — creates `index.md`.
+- `"html"` — creates `index.html`.
 
 Structured result (`details`):
 
@@ -113,13 +117,44 @@ Structured result (`details`):
 - Rejects ids that escape the store (path traversal) and ids that do not exist;
   failures return `{ ok: false, id, error }`.
 
-## `/viewer` command
+## Commands
 
-Opens the static artifact gallery served by the localhost preview server. When a
-Chromium-family browser is available it launches a dedicated, chromeless app
-window with an isolated profile, managed by the extension and closed on session
-shutdown. Otherwise it falls back to the default browser, then to printing the
-URL. Overrides: `PI_ARTIFACTS_VIEWER=browser`, `PI_ARTIFACTS_BROWSER=<path>`.
+### `/viewer`
+
+Opens the live artifact gallery served by the localhost preview server. The
+gallery is scoped to the active Pi session by default and can switch to all
+sessions. Gallery pages and open artifact pages subscribe to Server-Sent Events
+and live-reload on render/delete/session-scope changes. The gallery supports
+server-side search plus stack/status filters (`markdown`/`html`, OK, warnings,
+errors, never rendered). Gallery and artifact pages include a persistent toolbar
+for navigation and stable future actions such as export.
+
+When a Chromium-family browser is available, `/viewer` launches a dedicated,
+chromeless app window with an isolated profile, managed by the extension and
+closed on session shutdown. Otherwise it falls back to the default browser, then
+to printing the URL.
+
+Environment overrides:
+
+- `PI_ARTIFACTS_VIEWER=app|browser|none`
+- `PI_ARTIFACTS_BROWSER=<path>`
+
+### `/viewer-mode`
+
+Persists how `/viewer` opens:
+
+- `app` — dedicated Chromium-family app window when available.
+- `browser` — default browser.
+- `off` — print the URL only (`none` internally), useful for SSH/headless.
+
+Run with no argument to see the current setting.
+
+### `/viewer-auto`
+
+Toggles whether a successful render auto-shows the artifact. When enabled, an
+already-open viewer window navigates to the freshly rendered artifact via SSE;
+otherwise a viewer window is opened according to `/viewer-mode`. Run with no
+argument to see the current setting.
 
 ## Manifest
 
@@ -135,36 +170,85 @@ Each bundle contains `manifest.json`:
   "updated": "2026-06-24T00:00:00.000Z",
   "cwd": "/home/me/project",
   "sessionFile": "/home/me/.pi/agent/sessions/session.jsonl",
-  "sessionKey": "sha256-session-file-path"
+  "sessionKey": "sha256-session-file-path",
+  "lastRender": {
+    "ok": true,
+    "warnings": 1,
+    "errors": 0,
+    "rendered": "2026-06-24T00:05:00.000Z",
+    "warningCodes": ["markdownlint"]
+  }
 }
 ```
 
 Required fields: `id`, `title`, `stack`, `entry`, `created`, `updated`, `cwd`.
-Optional fields: `sessionFile`, `sessionKey`.
+Optional fields: `sessionFile`, `sessionKey`, `lastRender`.
 
 Timestamp policy:
 
 - Use ISO-8601 strings from `Date.prototype.toISOString()`.
 - `created` is fixed at scaffold time.
-- `updated` changes when the bundle is mutated by scaffold/render operations.
+- `updated` changes when the bundle is rendered.
+- `lastRender` records the latest render attempt status, including failed
+  validation attempts that did not produce a preview.
 
 ## Validation severity
 
-Render-blocking errors are reserved for content that will not render. Formatting,
-style, portability, and best-practice findings are warnings unless they directly
-prevent rendering.
+Render-blocking errors are reserved for content that will not render.
+Formatting, style, portability, and best-practice findings are warnings unless
+they directly prevent rendering.
+
+Markdown validation:
+
+- Prettier formats `index.md` in place.
+- markdownlint findings are warnings.
+- KaTeX math parse failures are render-blocking errors.
+- Mermaid fenced blocks return a non-blocking `mermaid/not-validated` warning.
+
+HTML validation:
+
+- Prettier formats `index.html` in place.
+- HTMLHint findings are warnings.
+- Capability/security checks warn on authored executable JavaScript and missing
+  chart specs.
+- HTML warnings are advisory; the preview server's CSP and file-serving policy
+  enforce the runtime boundary.
+
+## HTML runtime and JavaScript policy
+
+HTML artifacts are content-only, declarative bundles. The package injects and
+serves the curated runtime from `/runtime`:
+
+- Pico CSS (`/runtime/pico/...`)
+- Chart.js (`/runtime/chartjs/...`)
+- chart hydration, live reload, and icons (`/runtime/pi/...`)
+
+Author-provided JavaScript is not allowed. The validation gate warns on:
+
+- inline executable `<script>` bodies,
+- authored `<script src="...">`,
+- inline event handlers such as `onclick=`,
+- `javascript:` URLs.
+
+Artifact `.js` files under `/artifacts/<id>/...` are rejected by the preview
+server. Runtime JavaScript remains available only under `/runtime/...`.
+
+Charting is declarative: author a `<canvas data-chart>` plus a sibling
+`<script type="application/json" class="pi-chart-spec">` JSON Chart.js config.
+JSON script blocks are data, not authored executable JavaScript.
 
 ## Preview server baseline
 
-MVP-1 preview serving must:
+Preview serving must:
 
-- bind only to localhost (`127.0.0.1` or equivalent),
-- serve only the selected artifact directory and package runtime files,
+- bind only to localhost (`127.0.0.1`),
+- serve only artifact bundle files and package runtime files,
 - reject path traversal,
+- reject executable JavaScript from artifact bundles,
 - avoid proxying external network requests by default,
 - set a restrictive Content-Security-Policy header on every response.
 
 ## Mermaid validation
 
-Mermaid parsing is warn-only or skipped until headless Node parsing is proven
-simple and reliable. It must not block MVP-1 rendering by default.
+Mermaid parsing is warn-only until headless Node parsing is proven simple and
+reliable. It must not block rendering by default.

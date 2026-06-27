@@ -1,81 +1,128 @@
 # Visualization Artifacts Roadmap
 
-This is the implementation roadmap for the first package in this repo: `@jakeryderv/pi-artifacts`. The pinned tool and manifest shapes live in [`./api.md`](./api.md), and the fuller product/design notes live in [`./notes/design.md`](./notes/design.md). Cross-cutting repo conventions (dependency placement, extension lifecycle, rebrand-safe paths) live in the repo-level [`packaging notes`](../../../docs/notes/packaging.md).
+This is the implementation roadmap for `@jakeryderv/pi-artifacts`. The pinned
+contract lives in [`./api.md`](./api.md), and historical product/design notes
+live in `docs/notes/design.md`. Cross-cutting repo conventions
+(dependency placement, extension lifecycle, rebrand-safe paths) live in the
+repo-level [`packaging notes`](../../../docs/notes/packaging.md).
 
-## Initial scaffold decisions
+## Settled foundations
 
 - Workspace package folder: `packages/pi-artifacts`.
 - Published npm package: `@jakeryderv/pi-artifacts`.
 - Root repo remains private and unpublished.
-- Package includes a Pi extension, a Pi skill/authoring guide, and a package README.
-- MVP preview uses a localhost-only static server from day one.
-- **Store base path**: `~/.pi/artifacts/`. The store is the durable, cross-project, cross-session source of truth — not per-session agent runtime state — so it lives in the `~/.pi` ecosystem-data namespace (alongside other tools' data) rather than inside `~/.pi/agent/` next to the disposable `sessions/`. Provenance ties to a session logically via `sessionKey`/`sessionFile` in the manifest, not by physical location. _Revisit if Pi later ships an official extension data-dir convention/API_ (none exists today — the path is chosen manually with `node:os`/`node:path`).
-  - **Rebrand-safe derivation**: don't hardcode `.pi`. Pi's config dir name is configurable (`CONFIG_DIR_NAME`, default `.pi`; forks rename it), so compute the store as `join(os.homedir(), CONFIG_DIR_NAME, "artifacts")` — which equals `~/.pi/artifacts/` by default. `CONFIG_DIR_NAME` is exported from `@earendil-works/pi-coding-agent`.
-- **Cross-cutting conventions** (dependency placement, no-background-work-in-factory lifecycle anchor, rebrand-safe paths) apply here but are documented once at the repo level — see [`docs/notes/packaging.md` → Extension conventions](../../../docs/notes/packaging.md#extension-conventions-cross-cutting). For this package they mean: validation-gate libs (Prettier, markdownlint, KaTeX; later HTMLHint) go in the package `dependencies`, and the preview server starts in `session_start` / closes in `session_shutdown`.
-- **`id` derivation**: `slugify(title)`, with collision handling by numeric suffix (`-2`, `-3`, …). Locked now because the manifest, store, and preview server all encode it.
+- Package includes a Pi extension, a Pi skill/authoring guide, and a package
+  README.
+- Preview uses a localhost-only static server from day one.
+- **Store base path**: `join(os.homedir(), CONFIG_DIR_NAME, "artifacts")`,
+  which is `~/.pi/artifacts/` by default but stays rebrand-safe.
+- The store is durable and cross-project; provenance ties artifacts to sessions
+  via `sessionFile`/`sessionKey` in the manifest.
+- The preview server starts in `session_start` or lazily on first render and
+  closes in `session_shutdown`; no server starts in the extension factory.
+- **`id` derivation**: `slugify(title)`, with collision handling by numeric
+  suffix (`-2`, `-3`, ...).
 
-## MVP
+## Completed milestones
 
-Build the smallest useful package before committing to the full viewer architecture. The MVP is split into two ordered milestones: **MVP-1 proves the entire structural loop with markdown only**, then **MVP-2 layers on the html stack**. This derisks everything structural (store, manifest, tools, gate, server, session provenance) before the heavier shared-runtime-injection work, and matches the "get a usable surface early" principle. The full design is unchanged — this only sequences the build.
+### MVP-1 — markdown core loop
 
-### MVP-1 — markdown-only core loop
-
-The smallest end-to-end slice. Markdown is the only `stack`; no shared html runtime yet.
+Implemented:
 
 1. Monorepo package scaffold under `packages/`.
 2. Pi extension loads from the package.
-3. `scaffold_artifact` creates an empty bundle in `<store>/<id>/` (`<store>` = `join(os.homedir(), CONFIG_DIR_NAME, "artifacts")`, i.e. `~/.pi/artifacts/<id>/` by default):
+3. `scaffold_artifact` creates markdown bundles:
    - `manifest.json`
    - blank `index.md`
    - `assets/`
-4. `render_artifact` validates/normalizes the authored bundle and returns warnings/errors.
-5. Basic artifact store + manifest metadata:
+4. `render_artifact` validates/normalizes the authored bundle and returns
+   warnings/errors.
+5. Artifact store + manifest metadata:
    - `id`
    - `title`
    - `stack`
    - `entry`
-   - `sessionFile` / derived `sessionKey` when available
+   - `sessionFile` / `sessionKey` when available
    - `cwd`
    - timestamps
-6. Markdown validation gate: Prettier (autofix) + markdownlint (warn/error) + KaTeX strict (error). **Mermaid parse-check is gated behind the feasibility spike (see Early spikes); ship it warn-only or skipped if it can't run headless in Node.**
-7. Simple preview path through a tiny local server from day one:
-   - bind to localhost only
-   - serve the selected artifact directory
-   - serve package runtime files
-   - reject path traversal
-   - do not proxy external network requests by default
-   - **set a baseline restrictive `Content-Security-Policy` header on all responses** (cheap, and it is the real boundary once the html stack lands — establish it now)
-8. Markdown authoring skill that tells the agent how to create portable markdown artifacts within the ruleset.
-9. Static browser gallery via `/viewer`: list valid store artifacts and link to local previews. Manual refresh is acceptable; live session sync remains deferred.
-
-**Current implementation status:** MVP-1 is implemented with the documented Mermaid fallback: Mermaid fences emit a non-blocking warning instead of syntax validation. The static `/viewer` gallery is also implemented on the localhost server.
+6. Markdown validation gate:
+   - Prettier autofix
+   - markdownlint warnings
+   - KaTeX strict render-blocking errors
+   - Mermaid fences as non-blocking `mermaid/not-validated` warnings
+7. Localhost preview server:
+   - binds to `127.0.0.1`
+   - serves artifact files and package runtime files
+   - rejects path traversal
+   - sets a baseline restrictive `Content-Security-Policy`
+8. Markdown authoring skill.
 
 ### MVP-2 — html stack
 
-Adds the dynamic-UI lane on top of the proven core loop.
+Implemented, with a deliberate no-framework/no-authored-JS design instead of the
+original Alpine direction:
 
-1. `scaffold_artifact` supports `type: "html"` → blank `index.html` + `assets/` (same shape as markdown).
-2. Shared html runtime injection at render time: semantic CSS base (Pico), Alpine, one charting lib, icons — served by the preview server, never vendored per bundle.
-3. html validation gate: Prettier (autofix) + HTMLHint or similar (warn/error) + custom runtime-check (warn).
-4. html authoring skill: how semantic HTML maps to the CSS base, dropping an Alpine directive, the chart-spec shape, icon names — the enabler that converts installed capability into low agent effort.
-5. Confirm the baseline CSP from MVP-1 holds for runtime-injected JS (Alpine/charts execute in the browser surface).
+1. `scaffold_artifact` supports `type: "html"` → blank `index.html` +
+   `assets/`.
+2. Shared html runtime is injected at render time and served from `/runtime`:
+   - Pico CSS classless semantic base
+   - Chart.js UMD bundle
+   - CSP-clean chart hydration from JSON chart specs
+   - icon sprite
+3. html validation gate:
+   - Prettier autofix
+   - HTMLHint warnings
+   - CSP/capability warnings for authored JavaScript and missing chart specs
+4. html authoring skill documents semantic HTML, CSS-only interactivity, chart
+   specs, and icons.
+5. Strict CSP remains in place (`script-src 'self'`), while artifact bundle
+   JavaScript is rejected so only package-owned runtime scripts execute.
 
-## Early spikes
+### Live viewer
 
-Resolve these before investing heavily in the full viewer:
+Implemented:
 
-- Viewer runtime: Pi/native webview, general webview binding, or local server + browser + WebSocket/SSE.
-- Lifecycle behavior across `/resume`, `/new`, and `/fork`.
-- Session identity source: confirm `ctx.sessionManager.getSessionFile()` is sufficient and derive `sessionKey` from it.
-- **Mermaid parse-check feasibility in Node**: Mermaid historically needs a DOM (jsdom/puppeteer) even for `mermaid.parse`, unlike KaTeX/markdownlint/Prettier/HTMLHint which run cleanly headless. MVP-1 uses the planned fallback: Mermaid fences produce a warning and never block rendering. Revisit if adding a reliable headless parser.
-- HTML rendering security: sandboxing, CSP, network policy, file access, and vendored JS policy. (Baseline CSP is **not** deferred — it ships in MVP-1's preview server; this spike covers the deeper sandboxing posture.)
-- Preview server details: port selection, lifecycle/shutdown, stale server cleanup, and path allowlisting.
+- `/viewer` opens a session-scoped artifact gallery.
+- Gallery can toggle to all sessions.
+- Gallery supports search plus stack/status filters.
+- Gallery and artifact pages have a persistent toolbar for navigation and
+  future actions such as export.
+- Gallery and artifact pages subscribe to Server-Sent Events.
+- Render/delete/session-scope changes live-reload relevant pages.
+- `/viewer-mode app|browser|off` persists launch behavior.
+- `/viewer-auto on|off` controls render auto-open/navigation.
+- Dedicated Chromium-family app window mode uses an isolated profile and closes
+  on session shutdown.
 
-## Deferred until after MVP
+## Current security posture
 
-- Fully persistent session-reactive viewer.
-- Live session sync.
-- Bidirectional viewer-to-agent actions.
-- Export flows.
-- Live/real-time data feeds.
-- Cleanup/retention policy beyond simple manual deletion.
+- Artifact previews bind only to localhost.
+- Artifact files and runtime files are served from separate namespaces:
+  `/artifacts/<id>/...` and `/runtime/<namespace>/...`.
+- Path traversal is rejected in store APIs and server file serving.
+- HTML artifacts are declarative content, not mini web apps:
+  - inline executable `<script>` warns,
+  - authored `<script src>` warns,
+  - inline event handlers warn,
+  - `javascript:` URLs warn,
+  - artifact `.js` files are rejected by the server.
+- Runtime JavaScript is package-owned and served only from `/runtime`.
+- Manifest `lastRender` metadata stores the latest render status so list/viewer
+  surfaces can show OK/warning/error/never-rendered state.
+
+## Parked / future work
+
+- **Export flows:** produce portable outputs, likely starting with single-file
+  HTML export for html artifacts and rendered HTML/PDF for markdown artifacts.
+- **Retention/cleanup policy:** the global store grows until manual deletion.
+  Future options include age-based cleanup, project/session filters, or a bulk
+  clear command.
+- **Richer curated runtime components:** add reusable declarative patterns only
+  when repeated artifact authoring needs justify them.
+- **Mermaid validation feasibility:** revisit if a reliable headless parser is
+  available without heavy DOM/browser dependencies.
+- **Live data:** snapshot data works today via `assets/`; true live data remains
+  a future viewer-brokered capability.
+- **Bidirectional viewer-to-agent actions:** intentionally deferred.
+- **Advanced script-enabled stack:** not planned by default. If ever needed,
+  make it explicit rather than weakening the default html stack.

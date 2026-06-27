@@ -1,5 +1,14 @@
 export type ArtifactStack = "markdown" | "html";
 
+export interface ArtifactRenderStatus {
+  ok: boolean;
+  warnings: number;
+  errors: number;
+  rendered: string;
+  warningCodes?: string[];
+  errorCodes?: string[];
+}
+
 export interface ArtifactManifest {
   id: string;
   title: string;
@@ -10,6 +19,7 @@ export interface ArtifactManifest {
   cwd: string;
   sessionFile?: string;
   sessionKey?: string;
+  lastRender?: ArtifactRenderStatus;
 }
 
 export interface ScaffoldArtifactDetails {

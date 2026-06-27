@@ -107,11 +107,19 @@ function findCspWarnings(html: string, entryPath: string): ValidationFinding[] {
     const isData =
       type === "application/json" || type === "application/ld+json";
     const hasSrc = /\bsrc\s*=/.test(attrs);
+    if (hasSrc) {
+      pushAt(findings, html, match.index, {
+        code: "csp/script-src",
+        message:
+          "Authored <script src> files are not allowed in artifacts. Use the injected pi-artifacts runtime capabilities instead.",
+        file: entryPath,
+      });
+    }
     if (!isData && !hasSrc && body.length > 0) {
       pushAt(findings, html, match.index, {
         code: "csp/inline-script",
         message:
-          "Inline <script> executes JS and is blocked by the artifact CSP. Use the chart spec convention or a runtime served from /runtime.",
+          "Inline <script> executes JS and is blocked by the artifact CSP. Use the chart spec convention or an injected pi-artifacts runtime capability.",
         file: entryPath,
       });
     }

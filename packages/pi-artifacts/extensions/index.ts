@@ -15,6 +15,7 @@ import {
 import { getSessionFile, sessionKeyFromFile } from "./session.ts";
 import { validateHtmlArtifact } from "./validation/html.ts";
 import { validateMarkdownArtifact } from "./validation/markdown.ts";
+import type { ArtifactRenderStatus, ValidationFinding } from "./types.ts";
 import {
   openViewerWindow,
   type ViewerWindow,
@@ -252,7 +253,22 @@ async function executeRenderArtifact(
       artifact.entryPath,
     );
 
+    const rendered = new Date().toISOString();
+    const renderStatus = summarizeRenderStatus({
+      ok: validation.errors.length === 0,
+      warnings: validation.warnings,
+      errors: validation.errors,
+      rendered,
+    });
+    const updatedManifest = {
+      ...artifact.manifest,
+      updated: rendered,
+      lastRender: renderStatus,
+    };
+    await writeManifest(artifact.id, updatedManifest);
+
     if (validation.errors.length > 0) {
+      previewServer.peek()?.broadcastUpdate(artifact.id);
       return {
         content: [
           {
@@ -263,12 +279,6 @@ async function executeRenderArtifact(
         details: { ok: false, ...validation },
       };
     }
-
-    const updatedManifest = {
-      ...artifact.manifest,
-      updated: new Date().toISOString(),
-    };
-    await writeManifest(artifact.id, updatedManifest);
 
     const server = await previewServer.get();
     server.registerArtifact({
@@ -299,6 +309,30 @@ async function executeRenderArtifact(
   } catch (error) {
     return renderFailure(error);
   }
+}
+
+function summarizeRenderStatus(input: {
+  ok: boolean;
+  warnings: ValidationFinding[];
+  errors: ValidationFinding[];
+  rendered: string;
+}): ArtifactRenderStatus {
+  return {
+    ok: input.ok,
+    warnings: input.warnings.length,
+    errors: input.errors.length,
+    rendered: input.rendered,
+    ...(input.warnings.length > 0
+      ? {
+          warningCodes: [
+            ...new Set(input.warnings.map((warning) => warning.code)),
+          ],
+        }
+      : {}),
+    ...(input.errors.length > 0
+      ? { errorCodes: [...new Set(input.errors.map((error) => error.code))] }
+      : {}),
+  };
 }
 
 function renderFailure(error: unknown) {
@@ -341,6 +375,7 @@ function registerListTool(pi: ExtensionAPI): void {
         stack: artifact.manifest.stack,
         updated: artifact.manifest.updated,
         cwd: artifact.manifest.cwd,
+        lastRender: artifact.manifest.lastRender,
       }));
 
       const summary = rows.length

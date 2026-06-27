@@ -55,6 +55,15 @@ export function entryPath(
   return join(artifactPath(id, root), entryFileNameForStack(stack));
 }
 
+function validateArtifactBundlePath(id: string, root: string): string {
+  const path = artifactPath(id, root);
+  const resolvedRoot = resolve(root);
+  if (!isPathInside(resolvedRoot, path) || resolve(path) === resolvedRoot) {
+    throw new Error(`Invalid artifact id: ${id}`);
+  }
+  return path;
+}
+
 export interface ScaffoldArtifactInput {
   title: string;
   stack: ArtifactStack;
@@ -143,7 +152,7 @@ export async function loadArtifact(
   id: string,
   root = artifactsRoot(),
 ): Promise<LoadedArtifact> {
-  const path = artifactPath(id, root);
+  const path = validateArtifactBundlePath(id, root);
   const mPath = manifestPath(id, root);
   const rawManifest = await readFile(mPath, "utf8").catch((error: unknown) => {
     if (isNodeError(error) && error.code === "ENOENT") {
@@ -155,7 +164,7 @@ export async function loadArtifact(
   let parsedManifest: unknown;
   try {
     parsedManifest = JSON.parse(rawManifest);
-  } catch (error) {
+  } catch {
     throw new Error(`Artifact "${id}" has invalid manifest JSON.`);
   }
 
@@ -236,10 +245,7 @@ export async function deleteArtifact(
   id: string,
   root = artifactsRoot(),
 ): Promise<void> {
-  const path = artifactPath(id, root);
-  if (!isPathInside(root, path) || path === resolve(root)) {
-    throw new Error(`Invalid artifact id: ${id}`);
-  }
+  const path = validateArtifactBundlePath(id, root);
 
   const stats = await stat(path).catch((error: unknown) => {
     if (isNodeError(error) && error.code === "ENOENT") {

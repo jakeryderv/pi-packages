@@ -16,6 +16,17 @@ viewer.
 > and [design notes](https://github.com/jakeryderv/pi-packages/blob/main/packages/pi-artifacts/docs/notes/design.md)
 > for the broader plan.
 
+## What's new in 0.5.0
+
+- Persistent toolbar on the gallery and rendered artifact pages, with navigation
+  and a placeholder for future export actions.
+- Viewer search, stack/status filters, and render status badges.
+- Persisted `lastRender` metadata in artifact manifests for latest render
+  outcome, warning/error counts, and finding codes.
+- Stricter content-only html posture: authored scripts warn during validation,
+  and artifact `.js` files are rejected by the preview server.
+- CI/preflight workflow plus split tests and refreshed docs.
+
 ## Install
 
 ```bash
@@ -56,9 +67,11 @@ bundles.
 - **`list_artifacts`** tool — list artifact bundles in the store, newest first.
 - **`delete_artifact`** tool — delete a bundle and all of its files from the store.
 - **`/viewer`** command — open a live gallery of artifacts, scoped to the current
-  session (with an "all sessions" toggle) and auto-updating via Server-Sent
-  Events as you render or delete. When a
-  Chromium-family browser is available it opens in a dedicated, chromeless app
+  session (with an "all sessions" toggle), search/filter controls, render
+  status badges, and auto-updating via Server-Sent Events as you render or
+  delete. Gallery and artifact pages include a persistent toolbar with
+  navigation/actions, ready for future export controls. When a Chromium-family
+  browser is available it opens in a dedicated, chromeless app
   window (isolated profile, closed on session shutdown); otherwise it falls back
   to your default browser.
 - **`/viewer-mode`** command — set how `/viewer` opens and remember it across
@@ -83,9 +96,11 @@ via provenance metadata in the manifest.
 Pi packages run with full system access. This extension serves artifact previews
 only from a localhost-bound server, scoped to the selected artifact directory,
 with a restrictive Content-Security-Policy. html artifacts run under the same
-strict CSP (`script-src 'self'`): author-supplied inline JS, `on*=` handlers,
-and `javascript:` URLs are blocked, and the shared runtime is served only from
-the localhost origin. Review the source before installing.
+strict CSP (`script-src 'self'`), but the package keeps artifacts content-only:
+author-supplied inline JS, authored `<script src>` files, `on*=` handlers, and
+`javascript:` URLs are blocked or rejected, and executable runtime JS is served
+only from the package-owned `/runtime` namespace. Review the source before
+installing.
 
 ## Development
 

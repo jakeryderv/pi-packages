@@ -14,6 +14,11 @@ import { isPathInside } from "./path-safety.ts";
 import { RUNTIME_ROOTS } from "./runtime.ts";
 import { artifactsRoot, listArtifacts, loadArtifact } from "./store.ts";
 import type { ArtifactManifest } from "./types.ts";
+import {
+  artifactChromeStyles,
+  renderStatusKey,
+  renderStatusLabel,
+} from "./viewer-ui.ts";
 
 export const BASELINE_CSP = [
   "default-src 'self'",
@@ -156,7 +161,7 @@ async function handleRequest(
   }
 
   if (segments.length === 0 || segments[0] === "viewer") {
-    await sendViewer(root, sessionKey, url.searchParams.has("all"), response);
+    await sendViewer(root, sessionKey, url.searchParams, response);
     return;
   }
 
@@ -247,15 +252,28 @@ function broadcast(
 async function sendViewer(
   root: string,
   sessionKey: string | undefined,
-  showAll: boolean,
+  params: URLSearchParams,
   response: ServerResponse,
 ): Promise<void> {
+  const showAll = params.has("all");
+  const query = (params.get("q") ?? "").trim().toLowerCase();
+  const stackFilter = params.get("stack") ?? "";
+  const statusFilter = params.get("status") ?? "";
   const all = await listArtifacts(root);
   const scoped =
     showAll || !sessionKey
       ? all
       : all.filter((artifact) => artifact.manifest.sessionKey === sessionKey);
-  const artifacts = scoped;
+  const artifacts = scoped.filter((artifact) => {
+    const manifest = artifact.manifest;
+    const haystack =
+      `${artifact.id} ${manifest.title} ${manifest.cwd}`.toLowerCase();
+    return (
+      (!query || haystack.includes(query)) &&
+      (!stackFilter || manifest.stack === stackFilter) &&
+      (!statusFilter || renderStatusKey(manifest.lastRender) === statusFilter)
+    );
+  });
   const rows = artifacts
     .map((artifact) => {
       const title = escapeHtml(artifact.manifest.title);
@@ -264,14 +282,16 @@ async function sendViewer(
       const cwd = escapeHtml(artifact.manifest.cwd);
       const updated = escapeHtml(artifact.manifest.updated);
       const href = `/artifacts/${encodeURIComponent(artifact.id)}/`;
+      const status = renderStatusLabel(artifact.manifest.lastRender);
 
       return `<li>
-				<a href="${href}">${title}</a>
-				<small><code>${id}</code> · ${stack} · updated ${updated}</small>
-				<small>${cwd}</small>
-			</li>`;
+        <div class="row-title"><a href="${href}">${title}</a><span class="pi-artifact-badge">${stack}</span><span class="pi-artifact-badge ${status.className}">${status.label}</span></div>
+        <small><code>${id}</code> · updated ${updated}</small>
+        <small>${cwd}</small>
+      </li>`;
     })
     .join("\n");
+  const clearHref = showAll ? "/viewer?all" : "/viewer";
 
   sendHtml(
     response,
@@ -285,6 +305,11 @@ async function sendViewer(
 :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 body { max-width: 72rem; margin: 0 auto; padding: 2rem; line-height: 1.5; }
 header { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; border-bottom: 1px solid color-mix(in srgb, CanvasText 20%, Canvas); margin-bottom: 1.5rem; }
+.viewer-toolbar { position: sticky; top: 0; z-index: 1000; display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: -2rem -2rem 1.5rem; padding: 0.75rem 2rem; border-bottom: 1px solid color-mix(in srgb, CanvasText 16%, Canvas); background: color-mix(in srgb, Canvas 92%, transparent); backdrop-filter: blur(10px); }
+.viewer-toolbar h1 { margin: 0; }
+.viewer-toolbar-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 0.75rem; }
+form { display: grid; grid-template-columns: minmax(12rem, 1fr) repeat(2, minmax(9rem, auto)) auto; gap: 0.75rem; margin: 0 0 1rem; }
+input, select, button { font: inherit; padding: 0.45rem 0.6rem; border: 1px solid color-mix(in srgb, CanvasText 25%, Canvas); border-radius: 0.5rem; background: Canvas; color: CanvasText; }
 ul { list-style: none; padding: 0; }
 li { padding: 1rem 0; border-bottom: 1px solid color-mix(in srgb, CanvasText 12%, Canvas); }
 a { font-size: 1.15rem; font-weight: 650; }
@@ -292,20 +317,68 @@ small { display: block; color: color-mix(in srgb, CanvasText 70%, Canvas); }
 .empty { padding: 2rem; border: 1px dashed color-mix(in srgb, CanvasText 30%, Canvas); border-radius: 0.75rem; }
 .scope { font-size: 0.85rem; font-weight: 400; }
 .scope a { font-size: inherit; font-weight: inherit; }
+.row-title { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+${artifactChromeStyles()}
+@media (max-width: 720px) { form { grid-template-columns: 1fr; } .viewer-toolbar { align-items: flex-start; flex-direction: column; } }
 </style>
 </head>
 <body>
-<header>
+<nav class="viewer-toolbar" aria-label="Artifacts toolbar">
 <h1>Pi Artifacts</h1>
-<p>${artifacts.length} artifact${artifacts.length === 1 ? "" : "s"}
+<div class="viewer-toolbar-actions">
+<a href="/viewer">Gallery</a>
+<a href="${showAll ? "/viewer" : "/viewer?all"}">${showAll ? "This session" : "All sessions"}</a>
+<a href="${viewerRefreshHref(params)}">Refresh</a>
+<span class="pi-artifact-disabled" aria-disabled="true" title="Export support is planned">Export</span>
+</div>
+</nav>
+<header>
+<p>${artifacts.length} of ${scoped.length} artifact${scoped.length === 1 ? "" : "s"}
 ${viewerScopeLabel(sessionKey, showAll)}</p>
 </header>
+<form method="get" action="/viewer">
+${showAll ? '<input type="hidden" name="all" value="1">' : ""}
+<input type="search" name="q" value="${escapeHtml(params.get("q") ?? "")}" placeholder="Search title, id, or cwd" aria-label="Search artifacts">
+${viewerSelect("stack", stackFilter, [
+  ["", "All stacks"],
+  ["markdown", "Markdown"],
+  ["html", "HTML"],
+])}
+${viewerSelect("status", statusFilter, [
+  ["", "All statuses"],
+  ["ok", "OK"],
+  ["warnings", "Warnings"],
+  ["errors", "Errors"],
+  ["never", "Never rendered"],
+])}
+<button type="submit">Filter</button>
+</form>
+<p class="scope"><a href="${clearHref}">Clear filters</a></p>
 ${rows ? `<ul>${rows}</ul>` : `<p class="empty">${viewerEmptyMessage(root, sessionKey, showAll)}</p>`}
 <script src="/runtime/pi/viewer-live.js" defer></script>
 </body>
 </html>
 `,
   );
+}
+
+function viewerRefreshHref(params: URLSearchParams): string {
+  const query = params.toString();
+  return query ? `/viewer?${escapeHtml(query)}` : "/viewer";
+}
+
+function viewerSelect(
+  name: string,
+  selected: string,
+  options: Array<[value: string, label: string]>,
+): string {
+  const optionHtml = options
+    .map(([value, label]) => {
+      const selectedAttr = value === selected ? " selected" : "";
+      return `<option value="${escapeHtml(value)}"${selectedAttr}>${escapeHtml(label)}</option>`;
+    })
+    .join("");
+  return `<select name="${escapeHtml(name)}" aria-label="${escapeHtml(name)}">${optionHtml}</select>`;
 }
 
 function viewerScopeLabel(
@@ -340,7 +413,12 @@ async function sendRenderedArtifact(
       const markdown = await readFile(artifact.entryPath, "utf8");
       sendHtml(
         response,
-        renderMarkdownPage(markdown, artifact.manifest.title, artifact.id),
+        renderMarkdownPage(markdown, artifact.manifest.title, {
+          id: artifact.id,
+          title: artifact.manifest.title,
+          stack: artifact.manifest.stack,
+          lastRender: artifact.manifest.lastRender,
+        }),
       );
       return;
     }
@@ -348,7 +426,12 @@ async function sendRenderedArtifact(
       const html = await readFile(artifact.entryPath, "utf8");
       sendHtml(
         response,
-        renderHtmlPage(html, artifact.manifest.title, artifact.id),
+        renderHtmlPage(html, artifact.manifest.title, {
+          id: artifact.id,
+          title: artifact.manifest.title,
+          stack: artifact.manifest.stack,
+          lastRender: artifact.manifest.lastRender,
+        }),
       );
       return;
     }
@@ -385,6 +468,13 @@ async function sendArtifactFile(
   const filePath = resolve(artifact.path, relativePath);
   if (!isPathInside(artifact.path, filePath) || filePath === artifact.path) {
     sendText(response, 403, "Forbidden");
+    return;
+  }
+
+  // Artifact bundles are content-only: executable JavaScript is available only
+  // through the package-owned /runtime namespace, not author-provided files.
+  if (extname(filePath).toLowerCase() === ".js") {
+    sendText(response, 403, "Artifact JavaScript files are not executable.");
     return;
   }
 

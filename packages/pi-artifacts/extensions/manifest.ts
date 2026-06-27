@@ -1,4 +1,8 @@
-import type { ArtifactManifest, ArtifactStack } from "./types.ts";
+import type {
+  ArtifactManifest,
+  ArtifactRenderStatus,
+  ArtifactStack,
+} from "./types.ts";
 
 const SUPPORTED_STACKS = new Set<ArtifactStack>(["markdown", "html"]);
 
@@ -52,6 +56,36 @@ export function isArtifactManifest(value: unknown): value is ArtifactManifest {
     (candidate.sessionFile === undefined ||
       typeof candidate.sessionFile === "string") &&
     (candidate.sessionKey === undefined ||
-      typeof candidate.sessionKey === "string")
+      typeof candidate.sessionKey === "string") &&
+    (candidate.lastRender === undefined ||
+      isArtifactRenderStatus(candidate.lastRender))
+  );
+}
+
+function isArtifactRenderStatus(value: unknown): value is ArtifactRenderStatus {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+
+  return (
+    typeof candidate.ok === "boolean" &&
+    typeof candidate.warnings === "number" &&
+    Number.isInteger(candidate.warnings) &&
+    candidate.warnings >= 0 &&
+    typeof candidate.errors === "number" &&
+    Number.isInteger(candidate.errors) &&
+    candidate.errors >= 0 &&
+    typeof candidate.rendered === "string" &&
+    optionalStringArray(candidate.warningCodes) &&
+    optionalStringArray(candidate.errorCodes)
+  );
+}
+
+function optionalStringArray(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (Array.isArray(value) && value.every((entry) => typeof entry === "string"))
   );
 }
