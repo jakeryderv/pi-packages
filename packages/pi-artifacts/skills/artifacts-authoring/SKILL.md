@@ -23,9 +23,11 @@ Use this skill when creating or revising `pi-artifacts` bundles.
    (`off` just prints the URL, e.g. for SSH/headless). By default a successful
    render auto-opens the artifact (switching an already-open window to it);
    toggle this with `/viewer-auto on|off`.
-7. Use `list_artifacts` to discover existing bundles, `delete_artifact({ id })`
-   to remove one, and `delete_artifacts({ ids?, older_than_days? })` for bulk
-   cleanup (`/artifacts-clean <days>` does the age-based form interactively).
+7. Use `list_artifacts` to discover existing bundles — pass
+   `scope: "session" | "workspace" | "all"` to narrow to the current session
+   or workspace (same cwd) — `delete_artifact({ id })` to remove one, and
+   `delete_artifacts({ ids?, older_than_days? })` for bulk cleanup
+   (`/artifacts-clean <days>` does the age-based form interactively).
 
 The scaffold writes only structure:
 

@@ -120,6 +120,16 @@ Implemented alongside mermaid:
 - `writeManifest` is atomic (write temp + rename) so crashes/concurrent
   sessions cannot leave truncated manifests.
 
+### 0.7.0 — workspace scoping
+
+- Viewer gallery scope is three-way: this session / this workspace / all
+  artifacts (`?scope=session|workspace|all`; `?all` kept as an alias).
+- "This workspace" matches the artifact manifest `cwd` exactly against the
+  active session's cwd.
+- `list_artifacts` accepts the same optional `scope` parameter.
+- Scope filtering is shared (`extensions/scope.ts`) and degrades to "all"
+  when the anchor (session key / cwd) is unknown.
+
 ## Current security posture
 
 - Artifact previews bind only to localhost.

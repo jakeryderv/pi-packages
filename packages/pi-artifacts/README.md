@@ -16,7 +16,14 @@ viewer.
 > and [design notes](https://github.com/jakeryderv/pi-packages/blob/main/packages/pi-artifacts/docs/notes/design.md)
 > for the broader plan.
 
-## What's new in 0.6.0
+## What's new in 0.7.0
+
+- **Workspace scoping**: the viewer gallery now has a three-way scope —
+  this session / this workspace (artifacts created from the same cwd) / all
+  artifacts — and `list_artifacts` accepts an optional
+  `scope: "session" | "workspace" | "all"` parameter.
+
+## What was new in 0.6.0
 
 - **Mermaid diagrams render live** in both stacks: markdown ` ```mermaid `
   fences and html `<pre class="mermaid">` blocks hydrate client-side under the
@@ -67,15 +74,16 @@ bundles.
 - **`render_artifact`** tool — validate/normalize an authored bundle and preview it on localhost.
   - **markdown:** Prettier + markdownlint + strict KaTeX math; GFM task lists, GitHub-style alerts, footnotes, syntax-highlighted code, and Mermaid fences rendered as live diagrams.
   - **html:** Prettier + HTMLHint + CSP/chart capability checks; shared runtime (Pico CSS, Chart.js via a JSON chart-spec convention, Mermaid via `<pre class="mermaid">` blocks, an icon sprite) injected from `/runtime`.
-- **`list_artifacts`** tool — list artifact bundles in the store, newest first.
+- **`list_artifacts`** tool — list artifact bundles in the store, newest first;
+  optionally scoped to the current session or workspace (cwd).
 - **`delete_artifact`** tool — delete a bundle and all of its files from the store.
 - **`delete_artifacts`** tool — bulk-delete bundles by id list and/or age.
 - **`/artifacts-clean`** command — delete artifacts not updated in N days
   (`/artifacts-clean 30`); with no argument, shows the store size.
-- **`/viewer`** command — open a live gallery of artifacts, scoped to the current
-  session (with an "all sessions" toggle), search/filter controls, render
-  status badges, and auto-updating via Server-Sent Events as you render or
-  delete. Gallery and artifact pages include a persistent toolbar with
+- **`/viewer`** command — open a live gallery of artifacts with a three-way
+  scope (this session / this workspace / all artifacts), search/filter
+  controls, render status badges, and auto-updating via Server-Sent Events as
+  you render or delete. Gallery and artifact pages include a persistent toolbar with
   navigation/actions, ready for future export controls. When a Chromium-family
   browser is available it opens in a dedicated, chromeless app
   window (isolated profile, closed on session shutdown); otherwise it falls back

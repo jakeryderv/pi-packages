@@ -36,7 +36,7 @@ test("preview server viewer lists store artifacts", async (t) => {
   assert.equal(response.headers.get("content-security-policy"), BASELINE_CSP);
   assert.match(html, /Pi Artifacts/);
   assert.match(html, /viewer-toolbar/);
-  assert.match(html, /All sessions/);
+  assert.match(html, /All artifacts/);
   assert.match(html, /Export/);
   assert.match(html, /Gallery Item/);
   assert.match(html, /Never rendered/);
@@ -129,16 +129,61 @@ test("viewer filters by active session key and honors ?all", async (t) => {
 
   const server = await createPreviewServerState(root);
   t.after(() => server.close());
-  server.setSessionKey("session-a");
+  server.setSessionContext({ sessionKey: "session-a" });
 
   const scoped = await (await fetch(server.viewerUrl!)).text();
   assert.match(scoped, /Mine/);
   assert.doesNotMatch(scoped, /Theirs/);
-  assert.match(scoped, /all sessions/);
 
   const all = await (await fetch(`${server.viewerUrl}?all`)).text();
   assert.match(all, /Mine/);
   assert.match(all, /Theirs/);
+
+  const allByScope = await (
+    await fetch(`${server.viewerUrl}?scope=all`)
+  ).text();
+  assert.match(allByScope, /Mine/);
+  assert.match(allByScope, /Theirs/);
+});
+
+test("viewer scopes by workspace cwd", async (t) => {
+  const root = await makeTempRoot(t);
+  await scaffoldArtifact({
+    title: "Here Doc",
+    stack: MARKDOWN_STACK,
+    cwd: "/project-a",
+    root,
+    sessionKey: "old-session",
+  });
+  await scaffoldArtifact({
+    title: "Elsewhere Doc",
+    stack: MARKDOWN_STACK,
+    cwd: "/project-b",
+    root,
+    sessionKey: "old-session",
+  });
+
+  const server = await createPreviewServerState(root);
+  t.after(() => server.close());
+  server.setSessionContext({ sessionKey: "session-now", cwd: "/project-a" });
+
+  const workspace = await (
+    await fetch(`${server.viewerUrl}?scope=workspace`)
+  ).text();
+  assert.match(workspace, /Here Doc/);
+  assert.doesNotMatch(workspace, /Elsewhere Doc/);
+
+  // Neither artifact belongs to the active session.
+  const session = await (
+    await fetch(`${server.viewerUrl}?scope=session`)
+  ).text();
+  assert.doesNotMatch(session, /Here Doc/);
+  assert.doesNotMatch(session, /Elsewhere Doc/);
+
+  // The scope switcher shows all three scopes.
+  assert.match(workspace, /This session/);
+  assert.match(workspace, /This workspace/);
+  assert.match(workspace, /All artifacts/);
 });
 
 test("viewer shows all sessions when no session key is set", async (t) => {

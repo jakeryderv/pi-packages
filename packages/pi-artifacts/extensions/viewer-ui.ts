@@ -19,6 +19,7 @@ export function artifactChromeStyles(): string {
 .pi-artifact-badge-warn { background: color-mix(in srgb, orange 30%, Canvas); }
 .pi-artifact-badge-error { background: color-mix(in srgb, red 30%, Canvas); }
 .pi-artifact-disabled { opacity: 0.55; cursor: not-allowed; }
+.pi-artifact-scope-active { font-size: 0.95rem; font-weight: 650; opacity: 0.6; }
 @media (max-width: 720px) { .pi-artifact-toolbar { align-items: stretch; flex-direction: column; } }`;
 }
 

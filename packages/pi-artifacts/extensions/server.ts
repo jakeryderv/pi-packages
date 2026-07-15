@@ -12,6 +12,12 @@ import { renderHtmlPage } from "./html.ts";
 import { renderMarkdownPage } from "./markdown.ts";
 import { isPathInside } from "./path-safety.ts";
 import { RUNTIME_ROOTS } from "./runtime.ts";
+import {
+  type ArtifactScope,
+  filterByScope,
+  isArtifactScope,
+  type ScopeContext,
+} from "./scope.ts";
 import { artifactsRoot, listArtifacts, loadArtifact } from "./store.ts";
 import type { ArtifactManifest } from "./types.ts";
 import {
@@ -45,8 +51,8 @@ export interface PreviewServerState {
   registerArtifact: (record: PreviewArtifactRecord) => void;
   unregisterArtifact: (id: string) => void;
   artifactUrl: (id: string) => string | undefined;
-  /** Set the active session for gallery scoping (Phase D). */
-  setSessionKey: (key: string | undefined) => void;
+  /** Set the active session identity (key + cwd) for gallery scoping. */
+  setSessionContext: (context: ScopeContext) => void;
   /**
    * Push a live `update` event to connected viewers (Phase D). Pass the
    * affected artifact id so an open artifact page reloads only when it
@@ -63,15 +69,16 @@ export interface PreviewServerState {
 }
 
 /**
- * Per-request context. `sessionKey` is read fresh each request (it changes on
- * session replacement) and `sseClients` is the live transport seam: the only
- * place push reaches the viewer, kept out of the renderer/store (invariants).
+ * Per-request context. `sessionContext` is read fresh each request (it
+ * changes on session replacement) and `sseClients` is the live transport
+ * seam: the only place push reaches the viewer, kept out of the
+ * renderer/store (invariants).
  */
 interface RequestContext {
   artifacts: Map<string, PreviewArtifactRecord>;
   root: string;
   sseClients: Set<ServerResponse>;
-  sessionKey: string | undefined;
+  sessionContext: ScopeContext;
 }
 
 export async function createPreviewServerState(
@@ -79,7 +86,7 @@ export async function createPreviewServerState(
 ): Promise<PreviewServerState> {
   const artifacts = new Map<string, PreviewArtifactRecord>();
   const sseClients = new Set<ServerResponse>();
-  let sessionKey: string | undefined;
+  let sessionContext: ScopeContext = {};
 
   const server = createServer(async (request, response) => {
     setSecurityHeaders(response);
@@ -93,7 +100,7 @@ export async function createPreviewServerState(
       const url = new URL(request.url, "http://127.0.0.1");
       await handleRequest(
         url,
-        { artifacts, root, sseClients, sessionKey },
+        { artifacts, root, sseClients, sessionContext },
         request,
         response,
       );
@@ -121,8 +128,8 @@ export async function createPreviewServerState(
     artifactUrl(id) {
       return `${baseUrl}/artifacts/${encodeURIComponent(id)}/`;
     },
-    setSessionKey(key) {
-      sessionKey = key;
+    setSessionContext(context) {
+      sessionContext = context;
     },
     broadcastUpdate(artifactId) {
       broadcast(sseClients, "update", artifactId);
@@ -149,7 +156,7 @@ async function handleRequest(
   request: IncomingMessage,
   response: ServerResponse,
 ): Promise<void> {
-  const { artifacts, root, sseClients, sessionKey } = ctx;
+  const { artifacts, root, sseClients, sessionContext } = ctx;
   const segments = url.pathname
     .split("/")
     .filter(Boolean)
@@ -161,7 +168,7 @@ async function handleRequest(
   }
 
   if (segments.length === 0 || segments[0] === "viewer") {
-    await sendViewer(root, sessionKey, url.searchParams, response);
+    await sendViewer(root, sessionContext, url.searchParams, response);
     return;
   }
 
@@ -251,19 +258,20 @@ function broadcast(
 
 async function sendViewer(
   root: string,
-  sessionKey: string | undefined,
+  sessionContext: ScopeContext,
   params: URLSearchParams,
   response: ServerResponse,
 ): Promise<void> {
-  const showAll = params.has("all");
+  // `?all` predates `?scope=` and stays as an alias.
+  const scopeParam = params.get("scope") ?? (params.has("all") ? "all" : "");
+  const scope: ArtifactScope = isArtifactScope(scopeParam)
+    ? scopeParam
+    : "session";
   const query = (params.get("q") ?? "").trim().toLowerCase();
   const stackFilter = params.get("stack") ?? "";
   const statusFilter = params.get("status") ?? "";
   const all = await listArtifacts(root);
-  const scoped =
-    showAll || !sessionKey
-      ? all
-      : all.filter((artifact) => artifact.manifest.sessionKey === sessionKey);
+  const scoped = filterByScope(all, scope, sessionContext);
   const artifacts = scoped.filter((artifact) => {
     const manifest = artifact.manifest;
     const haystack =
@@ -291,7 +299,7 @@ async function sendViewer(
       </li>`;
     })
     .join("\n");
-  const clearHref = showAll ? "/viewer?all" : "/viewer";
+  const clearHref = viewerHref(scope);
 
   sendHtml(
     response,
@@ -326,18 +334,17 @@ ${artifactChromeStyles()}
 <nav class="viewer-toolbar" aria-label="Artifacts toolbar">
 <h1>Pi Artifacts</h1>
 <div class="viewer-toolbar-actions">
-<a href="/viewer">Gallery</a>
-<a href="${showAll ? "/viewer" : "/viewer?all"}">${showAll ? "This session" : "All sessions"}</a>
+${viewerScopeSwitcher(scope)}
 <a href="${viewerRefreshHref(params)}">Refresh</a>
 <span class="pi-artifact-disabled" aria-disabled="true" title="Export support is planned">Export</span>
 </div>
 </nav>
 <header>
 <p>${artifacts.length} of ${scoped.length} artifact${scoped.length === 1 ? "" : "s"}
-${viewerScopeLabel(sessionKey, showAll)}</p>
+· <span class="scope">${viewerScopeLabel(scope)}</span></p>
 </header>
 <form method="get" action="/viewer">
-${showAll ? '<input type="hidden" name="all" value="1">' : ""}
+${scope === "session" ? "" : `<input type="hidden" name="scope" value="${scope}">`}
 <input type="search" name="q" value="${escapeHtml(params.get("q") ?? "")}" placeholder="Search title, id, or cwd" aria-label="Search artifacts">
 ${viewerSelect("stack", stackFilter, [
   ["", "All stacks"],
@@ -354,7 +361,7 @@ ${viewerSelect("status", statusFilter, [
 <button type="submit">Filter</button>
 </form>
 <p class="scope"><a href="${clearHref}">Clear filters</a></p>
-${rows ? `<ul>${rows}</ul>` : `<p class="empty">${viewerEmptyMessage(root, sessionKey, showAll)}</p>`}
+${rows ? `<ul>${rows}</ul>` : `<p class="empty">${viewerEmptyMessage(root, scope)}</p>`}
 <script src="/runtime/pi/viewer-live.js" defer></script>
 </body>
 </html>
@@ -381,25 +388,39 @@ function viewerSelect(
   return `<select name="${escapeHtml(name)}" aria-label="${escapeHtml(name)}">${optionHtml}</select>`;
 }
 
-function viewerScopeLabel(
-  sessionKey: string | undefined,
-  showAll: boolean,
-): string {
-  if (!sessionKey) {
-    return "";
-  }
-  return showAll
-    ? `· <span class="scope">all sessions · <a href="/viewer">this session</a></span>`
-    : `· <span class="scope">this session · <a href="/viewer?all">all sessions</a></span>`;
+const SCOPE_LABELS: Record<ArtifactScope, string> = {
+  session: "This session",
+  workspace: "This workspace",
+  all: "All artifacts",
+};
+
+/** Gallery URL for a scope; session is the default and stays param-free. */
+function viewerHref(scope: ArtifactScope): string {
+  return scope === "session" ? "/viewer" : `/viewer?scope=${scope}`;
 }
 
-function viewerEmptyMessage(
-  root: string,
-  sessionKey: string | undefined,
-  showAll: boolean,
-): string {
-  if (sessionKey && !showAll) {
-    return `No artifacts for this session yet. <a href="/viewer?all">Show all sessions</a>.`;
+/** Three-way scope switcher; the active scope renders as plain text. */
+function viewerScopeSwitcher(active: ArtifactScope): string {
+  const scopes: ArtifactScope[] = ["session", "workspace", "all"];
+  return scopes
+    .map((scope) =>
+      scope === active
+        ? `<span class="pi-artifact-scope-active">${SCOPE_LABELS[scope]}</span>`
+        : `<a href="${viewerHref(scope)}">${SCOPE_LABELS[scope]}</a>`,
+    )
+    .join("\n");
+}
+
+function viewerScopeLabel(scope: ArtifactScope): string {
+  return SCOPE_LABELS[scope].toLowerCase();
+}
+
+function viewerEmptyMessage(root: string, scope: ArtifactScope): string {
+  if (scope === "session") {
+    return `No artifacts for this session yet. <a href="${viewerHref("workspace")}">Show this workspace</a> or <a href="${viewerHref("all")}">all artifacts</a>.`;
+  }
+  if (scope === "workspace") {
+    return `No artifacts for this workspace yet. <a href="${viewerHref("all")}">Show all artifacts</a>.`;
   }
   return `No artifacts found in ${escapeHtml(root)}.`;
 }

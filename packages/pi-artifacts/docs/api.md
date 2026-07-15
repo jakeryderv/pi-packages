@@ -72,7 +72,17 @@ source of truth for structured follow-up.
 
 ## `list_artifacts`
 
-Input: `{}`.
+Input (all optional):
+
+```json
+{
+  "scope": "workspace"
+}
+```
+
+`scope` accepts `"session"` (artifacts created by the current session),
+`"workspace"` (artifacts whose manifest `cwd` equals the current session's
+cwd, exact match), or `"all"` (default).
 
 Structured result (`details`):
 
@@ -87,12 +97,15 @@ Structured result (`details`):
       "cwd": "/home/me/project"
     }
   ],
-  "count": 1
+  "count": 1,
+  "scope": "workspace"
 }
 ```
 
 Artifacts are listed newest-first by `updated`. Invalid/unreadable bundles are
-skipped rather than failing the call.
+skipped rather than failing the call. A scope whose anchor is unknown (no
+session key or cwd available) degrades to `"all"` rather than returning
+nothing.
 
 ## `delete_artifact`
 
@@ -149,8 +162,11 @@ Structured result (`details`):
 ### `/viewer`
 
 Opens the live artifact gallery served by the localhost preview server. The
-gallery is scoped to the active Pi session by default and can switch to all
-sessions. Gallery pages and open artifact pages subscribe to Server-Sent Events
+gallery is scoped to the active Pi session by default and can switch scope via
+`?scope=session|workspace|all` (a three-way switcher in the toolbar):
+`workspace` shows artifacts whose manifest `cwd` exactly matches the active
+session's cwd; `?all` is kept as a legacy alias for `?scope=all`. Gallery
+pages and open artifact pages subscribe to Server-Sent Events
 and live-reload on render/delete/session-scope changes. The gallery supports
 server-side search plus stack/status filters (`markdown`/`html`, OK, warnings,
 errors, never rendered). Gallery and artifact pages include a persistent toolbar

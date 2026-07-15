@@ -14,6 +14,12 @@ import {
   writeManifest,
 } from "./store.ts";
 import { getSessionFile, sessionKeyFromFile } from "./session.ts";
+import {
+  type ArtifactScope,
+  filterByScope,
+  isArtifactScope,
+  type ScopeContext,
+} from "./scope.ts";
 import { validateHtmlArtifact } from "./validation/html.ts";
 import { validateMarkdownArtifact } from "./validation/markdown.ts";
 import type { ArtifactRenderStatus, ValidationFinding } from "./types.ts";
@@ -123,10 +129,7 @@ function registerPreviewLifecycle(
   // session_shutdown. render_artifact also lazily starts the server if needed.
   pi.on("session_start", async (_event, ctx) => {
     const server = await previewServer.get();
-    const sessionFile = getSessionFile(ctx);
-    server.setSessionKey(
-      sessionFile ? sessionKeyFromFile(sessionFile) : undefined,
-    );
+    server.setSessionContext(scopeContextFrom(ctx));
     // A new/resumed/forked session changes the active scope; nudge any open
     // viewer to re-fetch its (now differently scoped) list.
     server.broadcastUpdate();
@@ -136,6 +139,15 @@ function registerPreviewLifecycle(
     await viewerWindow.close();
     await previewServer.close();
   });
+}
+
+/** The active session's identity (provenance key + cwd) from a pi context. */
+function scopeContextFrom(ctx: unknown): ScopeContext {
+  const sessionFile = getSessionFile(ctx);
+  return {
+    sessionKey: sessionFile ? sessionKeyFromFile(sessionFile) : undefined,
+    cwd: (ctx as ContextWithCwd).cwd,
+  };
 }
 
 function registerScaffoldTool(pi: ExtensionAPI): void {
@@ -367,11 +379,35 @@ function registerListTool(pi: ExtensionAPI): void {
     label: "List Artifacts",
     description:
       "List artifact bundles in the store, newest first. " +
-      "Returns { artifacts: [{ id, title, stack, updated, cwd }], count }.",
+      'Optional scope: "session" (this session), "workspace" (same cwd), ' +
+      '"all" (default). ' +
+      "Returns { artifacts: [{ id, title, stack, updated, cwd }], count, scope }.",
     promptSnippet: "List existing artifact bundles in the store",
-    parameters: Type.Object({}),
-    async execute() {
-      const artifacts = await listArtifacts();
+    parameters: Type.Object({
+      scope: Type.Optional(
+        Type.Union(
+          [
+            Type.Literal("session"),
+            Type.Literal("workspace"),
+            Type.Literal("all"),
+          ],
+          {
+            description:
+              "Narrow the listing to the current session or workspace (cwd). Defaults to all.",
+          },
+        ),
+      ),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const requested = (params as { scope?: string }).scope ?? "all";
+      const scope: ArtifactScope = isArtifactScope(requested)
+        ? requested
+        : "all";
+      const artifacts = filterByScope(
+        await listArtifacts(),
+        scope,
+        scopeContextFrom(ctx),
+      );
       const rows = artifacts.map((artifact) => ({
         id: artifact.id,
         title: artifact.manifest.title,
@@ -385,11 +421,13 @@ function registerListTool(pi: ExtensionAPI): void {
         ? rows
             .map((row) => `- ${row.id} — ${row.title} (${row.stack})`)
             .join("\n")
-        : "No artifacts in the store.";
+        : scope === "all"
+          ? "No artifacts in the store."
+          : `No artifacts in scope "${scope}".`;
 
       return {
         content: [{ type: "text" as const, text: summary }],
-        details: { artifacts: rows, count: rows.length },
+        details: { artifacts: rows, count: rows.length, scope },
       };
     },
   });
