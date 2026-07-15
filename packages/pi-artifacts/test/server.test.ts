@@ -272,6 +272,21 @@ test("preview server serves namespaced runtime assets and guards traversal", asy
   const chart = await fetch(`${server.url}/runtime/chartjs/chart.umd.js`);
   assert.equal(chart.status, 200);
 
+  const hljsCss = await fetch(`${server.url}/runtime/hljs/github.min.css`);
+  assert.equal(hljsCss.status, 200);
+  assert.match(hljsCss.headers.get("content-type") ?? "", /text\/css/);
+
+  const mermaid = await fetch(`${server.url}/runtime/mermaid/mermaid.min.js`);
+  assert.equal(mermaid.status, 200);
+  assert.match(mermaid.headers.get("content-type") ?? "", /text\/javascript/);
+  // Drain the multi-megabyte body so the pooled connection is free for the
+  // fetches below instead of stalling until undici gives up on it.
+  const mermaidBody = await mermaid.arrayBuffer();
+  assert.ok(mermaidBody.byteLength > 1_000_000);
+
+  const mermaidInit = await fetch(`${server.url}/runtime/pi/mermaid-init.js`);
+  assert.equal(mermaidInit.status, 200);
+
   const hydrate = await fetch(`${server.url}/runtime/pi/chart-hydrate.js`);
   assert.equal(hydrate.status, 200);
 

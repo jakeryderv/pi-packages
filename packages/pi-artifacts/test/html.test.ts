@@ -44,6 +44,24 @@ test("renderers inject id-scoped live reload only when given an id", () => {
   );
 });
 
+test("renderHtmlPage injects the mermaid runtime only for pre.mermaid content", () => {
+  const withDiagram = renderHtmlPage(
+    '<pre class="mermaid">graph TD; A--&gt;B;</pre>',
+    "Diagram",
+  );
+  assert.match(
+    withDiagram,
+    /<script src="\/runtime\/mermaid\/mermaid\.min\.js" defer>/,
+  );
+  assert.match(
+    withDiagram,
+    /<script src="\/runtime\/pi\/mermaid-init\.js" defer>/,
+  );
+
+  const without = renderHtmlPage("<h1>No diagrams</h1>", "Plain");
+  assert.doesNotMatch(without, /mermaid/);
+});
+
 test("renderHtmlPage serves a full document verbatim", () => {
   const doc = "<!doctype html>\n<html><body><p>Whole</p></body></html>";
   assert.equal(renderHtmlPage(doc, "Ignored"), doc);

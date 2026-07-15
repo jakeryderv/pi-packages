@@ -10,22 +10,25 @@ viewer.
 > and show a session-scoped browser gallery via `/viewer` that updates live
 > (Server-Sent Events) as artifacts are rendered or deleted — and open artifact
 > pages reload themselves when re-rendered. html artifacts get
-> a shared runtime (Pico CSS, Chart.js, icons) injected under a strict CSP. See
+> a shared runtime (Pico CSS, Chart.js, Mermaid, icons) injected under a strict CSP. See
 > the [roadmap](https://github.com/jakeryderv/pi-packages/blob/main/packages/pi-artifacts/docs/roadmap.md),
 > [API contract](https://github.com/jakeryderv/pi-packages/blob/main/packages/pi-artifacts/docs/api.md),
 > and [design notes](https://github.com/jakeryderv/pi-packages/blob/main/packages/pi-artifacts/docs/notes/design.md)
 > for the broader plan.
 
-## What's new in 0.5.0
+## What's new in 0.6.0
 
-- Persistent toolbar on the gallery and rendered artifact pages, with navigation
-  and a placeholder for future export actions.
-- Viewer search, stack/status filters, and render status badges.
-- Persisted `lastRender` metadata in artifact manifests for latest render
-  outcome, warning/error counts, and finding codes.
-- Stricter content-only html posture: authored scripts warn during validation,
-  and artifact `.js` files are rejected by the preview server.
-- CI/preflight workflow plus split tests and refreshed docs.
+- **Mermaid diagrams render live** in both stacks: markdown ` ```mermaid `
+  fences and html `<pre class="mermaid">` blocks hydrate client-side under the
+  strict CSP (theme follows light/dark; syntax errors show inline). The old
+  `mermaid/not-validated` warning is gone.
+- **Syntax highlighting** for fenced code blocks with a language tag
+  (highlighted server-side via highlight.js; GitHub light/dark themes).
+- **Footnotes** (`[^1]`) now render as a linked footnotes section.
+- **Store cleanup**: new `delete_artifacts` bulk tool (by ids and/or age) and
+  `/artifacts-clean <days>` command.
+- Manifest writes are atomic (write-then-rename), hardening the shared store
+  against crashes and concurrent sessions.
 
 ## Install
 
@@ -62,10 +65,13 @@ bundles.
 
 - **`scaffold_artifact`** tool — create an empty markdown or html artifact bundle to author into.
 - **`render_artifact`** tool — validate/normalize an authored bundle and preview it on localhost.
-  - **markdown:** Prettier + markdownlint + strict KaTeX math; GFM task lists and GitHub-style alerts.
-  - **html:** Prettier + HTMLHint + CSP/chart capability checks; shared runtime (Pico CSS, Chart.js via a JSON chart-spec convention, an icon sprite) injected from `/runtime`.
+  - **markdown:** Prettier + markdownlint + strict KaTeX math; GFM task lists, GitHub-style alerts, footnotes, syntax-highlighted code, and Mermaid fences rendered as live diagrams.
+  - **html:** Prettier + HTMLHint + CSP/chart capability checks; shared runtime (Pico CSS, Chart.js via a JSON chart-spec convention, Mermaid via `<pre class="mermaid">` blocks, an icon sprite) injected from `/runtime`.
 - **`list_artifacts`** tool — list artifact bundles in the store, newest first.
 - **`delete_artifact`** tool — delete a bundle and all of its files from the store.
+- **`delete_artifacts`** tool — bulk-delete bundles by id list and/or age.
+- **`/artifacts-clean`** command — delete artifacts not updated in N days
+  (`/artifacts-clean 30`); with no argument, shows the store size.
 - **`/viewer`** command — open a live gallery of artifacts, scoped to the current
   session (with an "all sessions" toggle), search/filter controls, render
   status badges, and auto-updating via Server-Sent Events as you render or

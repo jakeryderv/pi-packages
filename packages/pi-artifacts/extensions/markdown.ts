@@ -2,6 +2,7 @@ import { createRequire } from "node:module";
 
 import * as katex from "katex";
 
+import { RUNTIME_URLS } from "./runtime.ts";
 import {
   artifactChromeStyles,
   renderArtifactToolbar,
@@ -16,6 +17,7 @@ type MarkdownItRenderer = {
 
 interface MdToken {
   type: string;
+  info: string;
   content: string;
   children: MdToken[] | null;
   attrJoin(name: string, value: string): void;
@@ -26,32 +28,90 @@ interface MdState {
   Token: new (type: string, tag: string, nesting: number) => MdToken;
 }
 
+type MdRule = (
+  tokens: MdToken[],
+  index: number,
+  options: unknown,
+  env: unknown,
+  self: unknown,
+) => string;
+
 interface MarkdownItInstance extends MarkdownItRenderer {
   core: {
     ruler: {
       after(after: string, name: string, fn: (state: MdState) => void): void;
     };
   };
+  renderer: {
+    rules: { fence?: MdRule };
+  };
+  use(plugin: (md: MarkdownItInstance) => void): MarkdownItInstance;
 }
 
 type MarkdownItConstructor = new (options?: {
   html?: boolean;
   linkify?: boolean;
   typographer?: boolean;
+  highlight?: (code: string, lang: string) => string;
 }) => MarkdownItInstance;
 
+interface HighlightJsLike {
+  getLanguage(name: string): unknown;
+  highlight(
+    code: string,
+    options: { language: string; ignoreIllegals?: boolean },
+  ): { value: string };
+}
+
 const MarkdownIt = require("markdown-it") as MarkdownItConstructor;
+// `lib/common` bundles the ~40 common grammars instead of all ~190.
+const hljsModule = require("highlight.js/lib/common") as
+  | HighlightJsLike
+  | { default: HighlightJsLike };
+const hljs = "default" in hljsModule ? hljsModule.default : hljsModule;
+const footnotePlugin = require("markdown-it-footnote") as (
+  md: MarkdownItInstance,
+) => void;
 
 const markdownIt = new MarkdownIt({
   html: false,
   linkify: true,
   typographer: false,
+  // Highlighting happens server-side; the page only needs theme CSS. A full
+  // `<pre class="hljs">` return is used verbatim by markdown-it, and unknown
+  // languages fall back to the default escaped <pre><code> rendering.
+  highlight: (code, lang) => {
+    if (!lang || !hljs.getLanguage(lang)) {
+      return "";
+    }
+    const highlighted = hljs.highlight(code, {
+      language: lang,
+      ignoreIllegals: true,
+    }).value;
+    return `<pre class="hljs"><code class="language-${escapeHtml(lang)}">${highlighted}</code></pre>`;
+  },
 });
+
+markdownIt.use(footnotePlugin);
 
 const ALERT_TYPES = new Set(["NOTE", "TIP", "IMPORTANT", "WARNING", "CAUTION"]);
 
 markdownIt.core.ruler.after("inline", "pi-task-lists", taskListsRule);
 markdownIt.core.ruler.after("block", "pi-alerts", alertsRule);
+
+// ```mermaid fences become <pre class="mermaid"> blocks that the injected
+// mermaid runtime hydrates client-side; every other fence keeps the default
+// <pre><code> rendering.
+const defaultFenceRule = markdownIt.renderer.rules.fence;
+markdownIt.renderer.rules.fence = (tokens, index, options, env, self) => {
+  const token = tokens[index];
+  if (token?.info.trim() === "mermaid") {
+    return `<pre class="mermaid">${escapeHtml(token.content)}</pre>\n`;
+  }
+  return defaultFenceRule
+    ? defaultFenceRule(tokens, index, options, env, self)
+    : "";
+};
 
 function taskListsRule(state: MdState): void {
   const tokens = state.tokens;
@@ -154,6 +214,15 @@ export function renderMarkdownPage(
   const liveReload = artifactId
     ? `<script src="/runtime/pi/viewer-live.js" data-artifact-id="${escapeHtml(artifactId)}" defer></script>\n`
     : "";
+  // The mermaid bundle is multi-megabyte; only documents that actually
+  // contain a diagram pay for it.
+  const mermaidRuntime = body.includes('<pre class="mermaid">')
+    ? `<script src="${RUNTIME_URLS.mermaidJs}" defer></script>\n<script src="${RUNTIME_URLS.mermaidInitJs}" defer></script>\n`
+    : "";
+  // Theme CSS only when something was actually highlighted.
+  const hljsCss = body.includes('<pre class="hljs">')
+    ? `<link rel="stylesheet" href="${RUNTIME_URLS.hljsCssLight}" media="(prefers-color-scheme: light)">\n<link rel="stylesheet" href="${RUNTIME_URLS.hljsCssDark}" media="(prefers-color-scheme: dark)">\n`
+    : "";
 
   return `<!doctype html>
 <html lang="en">
@@ -183,7 +252,7 @@ blockquote { border-left: 0.25rem solid color-mix(in srgb, CanvasText 25%, Canva
 ${artifactChromeStyles()}
 </style>
 <link rel="stylesheet" href="/runtime/katex/katex.min.css">
-${liveReload}</head>
+${hljsCss}${mermaidRuntime}${liveReload}</head>
 <body>
 ${toolbar}
 ${body}

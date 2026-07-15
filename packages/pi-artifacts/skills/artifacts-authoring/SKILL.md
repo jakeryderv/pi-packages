@@ -23,7 +23,9 @@ Use this skill when creating or revising `pi-artifacts` bundles.
    (`off` just prints the URL, e.g. for SSH/headless). By default a successful
    render auto-opens the artifact (switching an already-open window to it);
    toggle this with `/viewer-auto on|off`.
-7. Use `list_artifacts` to discover existing bundles, and `delete_artifact({ id })` to remove one.
+7. Use `list_artifacts` to discover existing bundles, `delete_artifact({ id })`
+   to remove one, and `delete_artifacts({ ids?, older_than_days? })` for bulk
+   cleanup (`/artifacts-clean <days>` does the age-based form interactively).
 
 The scaffold writes only structure:
 
@@ -48,6 +50,8 @@ Keep authoring portable across markdown-it, Obsidian, and GitHub.
 ### Tier 1 — use freely
 
 - Headings, paragraphs, bold/italic, lists, links, images, code blocks, blockquotes
+- Fenced code blocks with a language tag (syntax-highlighted in the preview for
+  common languages; unknown tags render as plain code)
 - Tables
 - Task lists (`- [ ]` / `- [x]`)
 - Strikethrough
@@ -55,8 +59,9 @@ Keep authoring portable across markdown-it, Obsidian, and GitHub.
 ### Tier 2 — safe in practice
 
 - LaTeX math: `$...$` and `$$...$$`, common KaTeX-compatible commands only
-- Mermaid fenced blocks for diagrams
-- Footnotes
+- Mermaid fenced blocks for diagrams (rendered as live diagrams in the preview)
+- Footnotes (`[^1]` references with `[^1]: ...` definitions; rendered as a
+  linked footnotes section)
 - GitHub/Obsidian-style callouts such as `> [!NOTE]`
 
 ### Tier 3 — avoid for portability
@@ -85,7 +90,9 @@ SVG is preferred because it stays crisp and is text-based.
 - markdownlint findings are warnings.
 - KaTeX math parse failures are render-blocking errors.
 - Portability checks warn on wikilinks, Obsidian embeds/block refs, and raw HTML styling/classes.
-- Mermaid fenced blocks return a non-blocking `mermaid/not-validated` warning in MVP-1; syntax validation is deferred.
+- Mermaid fences produce no validation findings; they render client-side in the
+  preview, and a diagram with invalid syntax shows an inline error where the
+  diagram would be. Check the rendered page when authoring non-trivial diagrams.
 
 Treat `details.errors` as required fixes before preview. Treat `details.warnings` as advisory unless the user needs strict portability.
 
@@ -101,6 +108,7 @@ localhost viewer. A shared runtime is injected automatically from `/runtime` —
   `<section>`, `<article>`, `<table>`, `<nav>`, `<figure>` — and it is styled
   with no classes. A `<canvas>`/`<svg>`/`<img>` is auto-fit to its container.
 - **Chart.js** + a hydration script (charts; see below).
+- **Mermaid** for `<pre class="mermaid">` diagram blocks (see below).
 - **An icon sprite** at `/runtime/pi/icons.svg`.
 
 ### Security model — strict CSP (read before authoring)
@@ -150,6 +158,22 @@ hydrates every such canvas:
 The spec must be valid JSON (double-quoted keys, no comments, no trailing
 commas, no JS function values). A `<canvas data-chart>` with no spec warns
 `chart/missing-spec` and renders blank.
+
+### Diagrams (Mermaid)
+
+Author diagram source as text inside `<pre class="mermaid">`; the runtime
+renders it client-side (no authored JS, CSP-clean, same convention as markdown
+` ```mermaid ` fences):
+
+```html
+<pre class="mermaid">
+graph TD;
+  Browser --&gt; Server;
+</pre>
+```
+
+Escape `<` and `&` in diagram source as `&lt;`/`&amp;` (it is HTML text
+content). Invalid syntax shows an inline error where the diagram would be.
 
 ### Icons
 

@@ -43,6 +43,11 @@ export function renderHtmlPage(
   const liveReload = artifactId
     ? `<script src="${RUNTIME_URLS.viewerLiveJs}" data-artifact-id="${escapeHtml(artifactId)}" defer></script>\n`
     : "";
+  // The mermaid bundle is multi-megabyte; only pages that author a
+  // <pre class="mermaid"> diagram pay for it.
+  const mermaidRuntime = hasMermaidBlock(html)
+    ? `<script src="${RUNTIME_URLS.mermaidJs}" defer></script>\n<script src="${RUNTIME_URLS.mermaidInitJs}" defer></script>\n`
+    : "";
 
   return `<!doctype html>
 <html lang="en">
@@ -61,7 +66,7 @@ ${artifactChromeStyles()}
 </style>
 <script src="${RUNTIME_URLS.chartJs}" defer></script>
 <script src="${RUNTIME_URLS.chartHydrateJs}" defer></script>
-${liveReload}</head>
+${mermaidRuntime}${liveReload}</head>
 <body>
 ${toolbar}
 ${html}
@@ -72,6 +77,10 @@ ${html}
 
 function isFullDocument(html: string): boolean {
   return /<!doctype\s+html|<html[\s>]/i.test(html);
+}
+
+function hasMermaidBlock(html: string): boolean {
+  return /<pre\b[^>]*\bclass\s*=\s*["'][^"']*\bmermaid\b/i.test(html);
 }
 
 function escapeHtml(value: string): string {

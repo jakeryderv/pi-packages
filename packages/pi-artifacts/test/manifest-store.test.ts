@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   rm,
   stat,
@@ -15,6 +16,7 @@ import { createManifest, isArtifactManifest } from "../extensions/manifest.ts";
 import { isPathInside } from "../extensions/path-safety.ts";
 import {
   deleteArtifact,
+  deleteArtifacts,
   listArtifacts,
   loadArtifact,
   scaffoldArtifact,
@@ -256,6 +258,89 @@ test("deleteArtifact removes an html bundle", async (t) => {
 
   await deleteArtifact(scaffolded.id, root);
   assert.equal((await listArtifacts(root)).length, 0);
+});
+
+test("writeManifest replaces the manifest atomically with no temp litter", async (t) => {
+  const root = await makeTempRoot(t);
+  const scaffolded = await scaffoldArtifact({
+    title: "Atomic Write",
+    stack: MARKDOWN_STACK,
+    cwd: "/project",
+    root,
+  });
+  const artifact = await loadArtifact(scaffolded.id, root);
+
+  await writeManifest(
+    scaffolded.id,
+    { ...artifact.manifest, title: "Updated Title" },
+    root,
+  );
+
+  const files = await readdir(artifact.path);
+  assert.deepEqual(files.sort(), ["assets", "index.md", "manifest.json"]);
+  const reloaded = await loadArtifact(scaffolded.id, root);
+  assert.equal(reloaded.manifest.title, "Updated Title");
+});
+
+test("deleteArtifacts deletes by age using manifest.updated", async (t) => {
+  const root = await makeTempRoot(t);
+  const stale = await scaffoldArtifact({
+    title: "Stale Doc",
+    stack: MARKDOWN_STACK,
+    cwd: "/project",
+    root,
+    now: new Date("2026-01-01T00:00:00.000Z"),
+  });
+  const fresh = await scaffoldArtifact({
+    title: "Fresh Doc",
+    stack: MARKDOWN_STACK,
+    cwd: "/project",
+    root,
+    now: new Date("2026-07-01T00:00:00.000Z"),
+  });
+
+  const deleted = await deleteArtifacts({
+    olderThan: new Date("2026-06-01T00:00:00.000Z"),
+    root,
+  });
+
+  assert.deepEqual(deleted, [stale.id]);
+  assert.deepEqual(
+    (await listArtifacts(root)).map((artifact) => artifact.id),
+    [fresh.id],
+  );
+});
+
+test("deleteArtifacts deletes by id list, skipping missing and invalid ids", async (t) => {
+  const root = await makeTempRoot(t);
+  const keep = await scaffoldArtifact({
+    title: "Keeper",
+    stack: MARKDOWN_STACK,
+    cwd: "/project",
+    root,
+  });
+  const drop = await scaffoldArtifact({
+    title: "Dropper",
+    stack: MARKDOWN_STACK,
+    cwd: "/project",
+    root,
+  });
+
+  const deleted = await deleteArtifacts({
+    ids: [drop.id, "no-such-artifact", "../escape"],
+    root,
+  });
+
+  assert.deepEqual(deleted, [drop.id]);
+  assert.deepEqual(
+    (await listArtifacts(root)).map((artifact) => artifact.id),
+    [keep.id],
+  );
+});
+
+test("deleteArtifacts requires a criterion", async (t) => {
+  const root = await makeTempRoot(t);
+  await assert.rejects(deleteArtifacts({ root }), /ids or olderThan/);
 });
 
 async function makeTempRoot(t: TestContext): Promise<string> {

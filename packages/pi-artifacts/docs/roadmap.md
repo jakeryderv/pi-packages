@@ -94,6 +94,32 @@ Implemented:
 - Dedicated Chromium-family app window mode uses an isolated profile and closes
   on session shutdown.
 
+### Mermaid rendering
+
+Implemented via the shared runtime (same pattern as Chart.js):
+
+- Markdown ` ```mermaid ` fences render to `<pre class="mermaid">`; the
+  html stack authors the same element directly.
+- The mermaid bundle + a package-owned init script are served from `/runtime`
+  under the strict CSP, and injected only into pages that contain a diagram.
+- Theme follows `prefers-color-scheme`; parse errors render inline in place of
+  the diagram.
+- The old `mermaid/not-validated` warning is gone — diagrams render instead.
+
+### 0.6.0 — richer authoring and store hygiene
+
+Implemented alongside mermaid:
+
+- Footnotes render via `markdown-it-footnote` (previously promised by the
+  authoring skill but rendered as literal `[^1]` text).
+- Fenced code with a language tag is syntax-highlighted server-side
+  (highlight.js common grammars); GitHub light/dark theme CSS is served from
+  `/runtime/hljs` and injected only when a page has highlighted code.
+- `delete_artifacts` tool (bulk delete by ids and/or `older_than_days`) and
+  `/artifacts-clean <days>` command.
+- `writeManifest` is atomic (write temp + rename) so crashes/concurrent
+  sessions cannot leave truncated manifests.
+
 ## Current security posture
 
 - Artifact previews bind only to localhost.
@@ -114,13 +140,14 @@ Implemented:
 
 - **Export flows:** produce portable outputs, likely starting with single-file
   HTML export for html artifacts and rendered HTML/PDF for markdown artifacts.
-- **Retention/cleanup policy:** the global store grows until manual deletion.
-  Future options include age-based cleanup, project/session filters, or a bulk
-  clear command.
+- **Retention/cleanup policy:** age-based and bulk deletion shipped in 0.6.0
+  (`delete_artifacts`, `/artifacts-clean`). Automatic/background retention and
+  project/session-scoped filters remain future options.
 - **Richer curated runtime components:** add reusable declarative patterns only
   when repeated artifact authoring needs justify them.
-- **Mermaid validation feasibility:** revisit if a reliable headless parser is
-  available without heavy DOM/browser dependencies.
+- **Mermaid server-side validation:** diagrams now render client-side with
+  inline error display; a render-gate syntax check is still deferred until a
+  reliable headless parser exists without heavy DOM/browser dependencies.
 - **Live data:** snapshot data works today via `assets/`; true live data remains
   a future viewer-brokered capability.
 - **Bidirectional viewer-to-agent actions:** intentionally deferred.

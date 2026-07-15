@@ -19,7 +19,6 @@ export async function validateMarkdownArtifact(
   }
 
   warnings.push(...(await lintMarkdown(formatted, entryPath)));
-  warnings.push(...findMermaidWarnings(formatted, entryPath));
   warnings.push(...findPortabilityWarnings(formatted, entryPath));
   errors.push(...findKatexErrors(formatted, entryPath));
 
@@ -131,28 +130,6 @@ function validateKatexExpression(input: {
       line: input.line,
     });
   }
-}
-
-function findMermaidWarnings(
-  markdown: string,
-  entryPath: string,
-): ValidationFinding[] {
-  const warnings: ValidationFinding[] = [];
-
-  for (const match of markdown.matchAll(/^[ \t]*(?:```|~~~)mermaid\b/gim)) {
-    if (match.index === undefined) {
-      continue;
-    }
-    warnings.push({
-      code: "mermaid/not-validated",
-      message:
-        "Mermaid diagrams are rendered as fenced code in MVP-1; syntax validation is deferred until a headless Mermaid parser is added.",
-      file: entryPath,
-      line: lineForIndex(markdown, match.index),
-    });
-  }
-
-  return warnings;
 }
 
 function findPortabilityWarnings(

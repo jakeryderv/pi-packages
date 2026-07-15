@@ -117,6 +117,33 @@ Structured result (`details`):
 - Rejects ids that escape the store (path traversal) and ids that do not exist;
   failures return `{ ok: false, id, error }`.
 
+## `delete_artifacts`
+
+Input (at least one field required):
+
+```json
+{
+  "ids": ["artifact-title", "other-artifact"],
+  "older_than_days": 30
+}
+```
+
+Structured result (`details`):
+
+```json
+{
+  "ok": true,
+  "deleted": ["artifact-title"],
+  "count": 1
+}
+```
+
+- `ids` are deleted directly; missing or invalid ids are skipped, not errors.
+- `older_than_days` additionally deletes every artifact whose manifest
+  `updated` timestamp is older than that many days.
+- `deleted` lists the ids actually removed. Calling with neither field returns
+  `{ ok: false, deleted: [], count: 0 }` without deleting anything.
+
 ## Commands
 
 ### `/viewer`
@@ -155,6 +182,12 @@ Toggles whether a successful render auto-shows the artifact. When enabled, an
 already-open viewer window navigates to the freshly rendered artifact via SSE;
 otherwise a viewer window is opened according to `/viewer-mode`. Run with no
 argument to see the current setting.
+
+### `/artifacts-clean`
+
+Age-based bulk deletion: `/artifacts-clean 30` deletes every artifact not
+updated in the last 30 days (all sessions). Run with no argument to see the
+store size without deleting anything.
 
 ## Manifest
 
@@ -203,7 +236,9 @@ Markdown validation:
 - Prettier formats `index.md` in place.
 - markdownlint findings are warnings.
 - KaTeX math parse failures are render-blocking errors.
-- Mermaid fenced blocks return a non-blocking `mermaid/not-validated` warning.
+- Mermaid fenced blocks produce no validation findings; they render
+  client-side via the shared runtime, and invalid syntax shows an inline error
+  in the rendered page.
 
 HTML validation:
 
@@ -221,7 +256,10 @@ serves the curated runtime from `/runtime`:
 
 - Pico CSS (`/runtime/pico/...`)
 - Chart.js (`/runtime/chartjs/...`)
-- chart hydration, live reload, and icons (`/runtime/pi/...`)
+- Mermaid (`/runtime/mermaid/...`)
+- highlight.js theme CSS (`/runtime/hljs/...`; markdown code is highlighted
+  server-side, so no highlighting JavaScript is served)
+- chart hydration, mermaid init, live reload, and icons (`/runtime/pi/...`)
 
 Author-provided JavaScript is not allowed. The validation gate warns on:
 
@@ -248,7 +286,12 @@ Preview serving must:
 - avoid proxying external network requests by default,
 - set a restrictive Content-Security-Policy header on every response.
 
-## Mermaid validation
+## Mermaid rendering
 
-Mermaid parsing is warn-only until headless Node parsing is proven simple and
-reliable. It must not block rendering by default.
+Mermaid diagrams render client-side: markdown ` ```mermaid ` fences (and
+authored `<pre class="mermaid">` blocks in the html stack) become
+`<pre class="mermaid">` elements, hydrated by the package-owned runtime served
+from `/runtime` under the strict CSP. The mermaid bundle is injected only into
+pages that contain a diagram. Server-side syntax validation stays out of the
+gate (a headless Node parser remains unproven); parse errors surface inline in
+the rendered page and must not block rendering.

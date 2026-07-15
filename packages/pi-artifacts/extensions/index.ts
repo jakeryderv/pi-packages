@@ -7,6 +7,7 @@ import { createPreviewServerState, type PreviewServerState } from "./server.ts";
 import {
   artifactsRoot,
   deleteArtifact,
+  deleteArtifacts,
   listArtifacts,
   loadArtifact,
   scaffoldArtifact,
@@ -67,6 +68,8 @@ export default function (pi: ExtensionAPI) {
   registerRenderTool(pi, previewServer, viewerWindow);
   registerListTool(pi);
   registerDeleteTool(pi, previewServer);
+  registerDeleteManyTool(pi, previewServer);
+  registerArtifactsCleanCommand(pi, previewServer);
   registerViewerCommand(pi, previewServer, viewerWindow);
   registerViewerModeCommand(pi);
   registerViewerAutoCommand(pi);
@@ -433,6 +436,130 @@ function registerDeleteTool(
       }
     },
   });
+}
+
+interface DeleteArtifactsParams {
+  ids?: string[];
+  older_than_days?: number;
+}
+
+function registerDeleteManyTool(
+  pi: ExtensionAPI,
+  previewServer: PreviewServerAccessor,
+): void {
+  pi.registerTool({
+    name: "delete_artifacts",
+    label: "Delete Artifacts",
+    description:
+      "Bulk-delete artifact bundles by id list and/or age. " +
+      "Returns { ok, deleted, count }. Missing ids are skipped, not errors.",
+    promptSnippet: "Bulk-delete artifact bundles from the store",
+    parameters: Type.Object({
+      ids: Type.Optional(
+        Type.Array(Type.String(), {
+          description: "Artifact ids to delete.",
+        }),
+      ),
+      older_than_days: Type.Optional(
+        Type.Number({
+          minimum: 0,
+          description:
+            "Also delete every artifact whose last update is older than this many days.",
+        }),
+      ),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      const input = params as DeleteArtifactsParams;
+      if (!input.ids?.length && input.older_than_days === undefined) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "delete_artifacts needs ids and/or older_than_days.",
+            },
+          ],
+          details: { ok: false, deleted: [], count: 0 },
+        };
+      }
+
+      const deleted = await deleteArtifacts({
+        ids: input.ids,
+        olderThan:
+          input.older_than_days === undefined
+            ? undefined
+            : new Date(Date.now() - input.older_than_days * 86_400_000),
+      });
+      unregisterDeleted(previewServer, deleted);
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: deleted.length
+              ? `Deleted ${deleted.length} artifact(s): ${deleted.join(", ")}.`
+              : "No artifacts matched.",
+          },
+        ],
+        details: { ok: true, deleted, count: deleted.length },
+      };
+    },
+  });
+}
+
+function registerArtifactsCleanCommand(
+  pi: ExtensionAPI,
+  previewServer: PreviewServerAccessor,
+): void {
+  pi.registerCommand("artifacts-clean", {
+    description:
+      "Delete artifacts not updated in N days, e.g. /artifacts-clean 30. No argument shows the store size.",
+    handler: async (args, ctx) => {
+      const requested = (args ?? "").trim();
+
+      if (!requested) {
+        const count = (await listArtifacts()).length;
+        ctx.ui.notify(
+          `${count} artifact(s) in ${artifactsRoot()}. Delete stale ones with /artifacts-clean <days>.`,
+          "info",
+        );
+        return;
+      }
+
+      const days = Number(requested);
+      if (!Number.isFinite(days) || days < 0) {
+        ctx.ui.notify(
+          `"${requested}" is not a number of days. Use /artifacts-clean 30.`,
+          "warning",
+        );
+        return;
+      }
+
+      const deleted = await deleteArtifacts({
+        olderThan: new Date(Date.now() - days * 86_400_000),
+      });
+      unregisterDeleted(previewServer, deleted);
+      ctx.ui.notify(
+        deleted.length
+          ? `Deleted ${deleted.length} artifact(s) older than ${days} day(s).`
+          : `No artifacts older than ${days} day(s).`,
+        "info",
+      );
+    },
+  });
+}
+
+function unregisterDeleted(
+  previewServer: PreviewServerAccessor,
+  deleted: string[],
+): void {
+  const server = previewServer.peek();
+  if (!server || deleted.length === 0) {
+    return;
+  }
+  for (const id of deleted) {
+    server.unregisterArtifact(id);
+  }
+  server.broadcastUpdate();
 }
 
 function registerViewerCommand(

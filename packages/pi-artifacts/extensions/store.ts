@@ -2,6 +2,7 @@ import {
   mkdir,
   readdir,
   readFile,
+  rename,
   rm,
   stat,
   writeFile,
@@ -235,10 +236,61 @@ export async function writeManifest(
   manifest: ArtifactManifest,
   root = artifactsRoot(),
 ): Promise<void> {
-  await writeFile(
-    manifestPath(id, root),
-    `${JSON.stringify(manifest, null, 2)}\n`,
-  );
+  // Write-then-rename so a crash mid-write can never leave a truncated
+  // manifest.json behind (the store is shared across concurrent sessions).
+  const path = manifestPath(id, root);
+  const tempPath = `${path}.tmp`;
+  await writeFile(tempPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  await rename(tempPath, path);
+}
+
+export interface DeleteArtifactsInput {
+  ids?: string[];
+  olderThan?: Date;
+  root?: string;
+}
+
+/**
+ * Bulk delete. `ids` are deleted directly (missing/invalid ids are skipped,
+ * not errors); `olderThan` deletes every listable artifact whose manifest
+ * `updated` timestamp is strictly older. Returns the ids actually deleted.
+ */
+export async function deleteArtifacts(
+  input: DeleteArtifactsInput,
+): Promise<string[]> {
+  const root = input.root ?? artifactsRoot();
+  if (!input.ids && !input.olderThan) {
+    throw new Error("deleteArtifacts requires ids or olderThan.");
+  }
+
+  const deleted: string[] = [];
+
+  for (const id of input.ids ?? []) {
+    try {
+      await deleteArtifact(id, root);
+      deleted.push(id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/does not exist|Invalid artifact id/.test(message)) {
+        throw error;
+      }
+    }
+  }
+
+  if (input.olderThan) {
+    const cutoff = input.olderThan.toISOString();
+    for (const artifact of await listArtifacts(root)) {
+      if (
+        artifact.manifest.updated < cutoff &&
+        !deleted.includes(artifact.id)
+      ) {
+        await deleteArtifact(artifact.id, root);
+        deleted.push(artifact.id);
+      }
+    }
+  }
+
+  return deleted;
 }
 
 export async function deleteArtifact(
