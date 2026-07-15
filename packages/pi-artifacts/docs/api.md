@@ -58,7 +58,7 @@ Structured result (`details`):
   "ok": true,
   "warnings": [],
   "errors": [],
-  "url": "http://127.0.0.1:45123/artifacts/artifact-title/"
+  "url": "http://127.0.0.1:45123/<capability>/artifacts/artifact-title/"
 }
 ```
 
@@ -275,7 +275,8 @@ serves the curated runtime from `/runtime`:
 - Mermaid (`/runtime/mermaid/...`)
 - highlight.js theme CSS (`/runtime/hljs/...`; markdown code is highlighted
   server-side, so no highlighting JavaScript is served)
-- chart hydration, mermaid init, live reload, and icons (`/runtime/pi/...`)
+- chart hydration, declarative components/file feeds, mermaid init, live reload,
+  and icons (`/runtime/pi/...`)
 
 Author-provided JavaScript is not allowed. The validation gate warns on:
 
@@ -288,19 +289,49 @@ Artifact `.js` files under `/artifacts/<id>/...` are rejected by the preview
 server. Runtime JavaScript remains available only under `/runtime/...`.
 
 Charting is declarative: author a `<canvas data-chart>` plus a sibling
-`<script type="application/json" class="pi-chart-spec">` JSON Chart.js config.
-JSON script blocks are data, not authored executable JavaScript.
+`<script type="application/json" class="pi-chart-spec">` JSON Chart.js config,
+or use `<pi-chart>` with a nested JSON spec or file-backed feed. JSON script
+blocks are data, not authored executable JavaScript.
+
+### Declarative components and file-backed feeds
+
+HTML fragments may use package-owned custom elements:
+
+- `<pi-grid columns="1|2|3|4">`
+- `<pi-card>`
+- `<pi-metric label value? trend? data-feed? field? trend-field?>`
+- `<pi-chart data-feed? field?>`
+- `<pi-table data-feed field? columns?>`
+- `<pi-data-source name src>`
+
+`<pi-data-source>` performs one JSON fetch per page load. `src` must be a
+`.json` path beneath the current artifact's `assets/` directory using URL-safe
+filename characters; absolute, external, root-relative, encoded, traversal,
+and cross-artifact paths are rejected.
+Consumers select a feed with `data-feed` and may select nested data using a
+dotted `field` path. Feed-derived metric and table values are inserted with
+`textContent`, never interpreted as HTML. The component runtime is injected
+only for HTML fragments; full authored documents retain their existing verbatim
+opt-out behavior.
 
 ## Preview server baseline
 
 Preview serving must:
 
+- start lazily on `/viewer` or the first successful render and close on session
+  shutdown,
 - bind only to localhost (`127.0.0.1`),
+- require a random per-server capability path for viewer pages, SSE, artifact
+  pages, and artifact assets,
 - serve only artifact bundle files and package runtime files,
 - reject path traversal,
 - reject executable JavaScript from artifact bundles,
 - avoid proxying external network requests by default,
-- set a restrictive Content-Security-Policy header on every response.
+- set a restrictive Content-Security-Policy header on every response,
+- disable caching and apply same-origin resource policy headers.
+
+The stable `/runtime` namespace is intentionally outside the capability path:
+it contains only package-owned static assets and never serves artifact content.
 
 ## Mermaid rendering
 

@@ -1,13 +1,10 @@
 # pi-artifacts Implementation Plan
 
-Status: MVP-1 (markdown loop) + static viewer are complete, preflighted, and
-**published as `@jakeryderv/pi-artifacts@0.1.0`** (npm, public; git tag
-`pi-artifacts-v0.1.0`). This document tracks the forward roadmap.
-
-**Next task: Phase D — session-reactive viewer (and/or the Phase D pre-gate
-webview spike, runnable anytime).** Phase C (the html stack, Passes 1 and 2) is
-complete and preflighted; `0.2.0` is staged in `package.json` and awaiting an
-`npm publish`.
+Status: historical implementation record through the original viewer phases.
+The markdown/HTML stacks, session-reactive viewer, cleanup, workspace scoping,
+declarative HTML components, file-backed feeds, capability-path hardening, and
+renderer registry are now implemented. See [`../roadmap.md`](../roadmap.md) and
+[`../api.md`](../api.md) for the current status and contract.
 
 ## Completed — MVP-1 + static viewer
 

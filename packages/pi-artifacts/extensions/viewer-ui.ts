@@ -5,6 +5,8 @@ export interface ArtifactPageChrome {
   title: string;
   stack: ArtifactStack;
   lastRender?: ArtifactRenderStatus;
+  /** Per-server capability path that protects viewer and artifact content. */
+  basePath?: string;
 }
 
 export function artifactChromeStyles(): string {
@@ -25,10 +27,11 @@ export function artifactChromeStyles(): string {
 
 export function renderArtifactToolbar(input: ArtifactPageChrome): string {
   const status = renderStatusLabel(input.lastRender);
-  const artifactHref = `/artifacts/${encodeURIComponent(input.id)}/`;
+  const basePath = input.basePath ?? "";
+  const artifactHref = `${basePath}/artifacts/${encodeURIComponent(input.id)}/`;
 
   return `<nav class="pi-artifact-toolbar" aria-label="Artifact toolbar">
-  <a href="/viewer">← Gallery</a>
+  <a href="${basePath}/viewer">← Gallery</a>
   <div class="pi-artifact-toolbar-title">
     <strong>${escapeHtml(input.title)}</strong>
     <div class="pi-artifact-toolbar-meta">

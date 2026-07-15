@@ -36,6 +36,7 @@ export const RUNTIME_URLS = {
   picoCss: "/runtime/pico/pico.classless.min.css",
   chartJs: "/runtime/chartjs/chart.umd.js",
   chartHydrateJs: "/runtime/pi/chart-hydrate.js",
+  artifactComponentsJs: "/runtime/pi/artifact-components.js",
   hljsCssLight: "/runtime/hljs/github.min.css",
   hljsCssDark: "/runtime/hljs/github-dark.min.css",
   mermaidJs: "/runtime/mermaid/mermaid.min.js",

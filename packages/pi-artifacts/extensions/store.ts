@@ -14,6 +14,7 @@ import { CONFIG_DIR_NAME } from "@earendil-works/pi-coding-agent";
 
 import { createManifest, isArtifactManifest } from "./manifest.ts";
 import { isPathInside } from "./path-safety.ts";
+import { getArtifactRenderer } from "./renderer-registry.ts";
 import { slugifyTitle, suffixSlug } from "./slug.ts";
 import type {
   ArtifactManifest,
@@ -40,12 +41,7 @@ export function manifestPath(id: string, root = artifactsRoot()): string {
 }
 
 export function entryFileNameForStack(stack: ArtifactStack): string {
-  switch (stack) {
-    case "markdown":
-      return "index.md";
-    case "html":
-      return "index.html";
-  }
+  return getArtifactRenderer(stack).entryFile;
 }
 
 export function entryPath(

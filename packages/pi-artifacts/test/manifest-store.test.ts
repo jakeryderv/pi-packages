@@ -1,13 +1,5 @@
 import assert from "node:assert/strict";
-import {
-  mkdir,
-  mkdtemp,
-  readdir,
-  readFile,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -143,7 +135,7 @@ test("scaffoldArtifact creates isolated bundles and handles collisions", async (
   assert.equal(first.entry, join(root, "q4-revenue", "index.md"));
   assert.equal(await readFile(first.entry, "utf8"), "");
 
-  const manifest = JSON.parse(await readFile(first.manifestPath, "utf8"));
+  const manifest = parseJson(await readFile(first.manifestPath, "utf8"));
   assert.equal(manifest.sessionFile, "/session.jsonl");
   assert.equal(manifest.sessionKey, "session-key");
   assert.equal((await stat(join(first.path, "assets"))).isDirectory(), true);
@@ -236,7 +228,7 @@ test("scaffoldArtifact creates html bundles with an index.html entry", async (t)
   assert.equal(scaffolded.entry, join(root, "html-dashboard", "index.html"));
   assert.equal(await readFile(scaffolded.entry, "utf8"), "");
 
-  const manifest = JSON.parse(await readFile(scaffolded.manifestPath, "utf8"));
+  const manifest = parseJson(await readFile(scaffolded.manifestPath, "utf8"));
   assert.equal(manifest.stack, "html");
   assert.equal(manifest.entry, "index.html");
 
@@ -342,6 +334,16 @@ test("deleteArtifacts requires a criterion", async (t) => {
   const root = await makeTempRoot(t);
   await assert.rejects(deleteArtifacts({ root }), /ids or olderThan/);
 });
+
+function parseJson(value: string): Record<string, unknown> {
+  try {
+    return JSON.parse(value) as Record<string, unknown>;
+  } catch (error) {
+    assert.fail(
+      `Expected valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
 
 async function makeTempRoot(t: TestContext): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "pi-artifacts-test-"));

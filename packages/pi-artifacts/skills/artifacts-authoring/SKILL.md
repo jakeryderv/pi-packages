@@ -111,7 +111,56 @@ localhost viewer. A shared runtime is injected automatically from `/runtime` —
   with no classes. A `<canvas>`/`<svg>`/`<img>` is auto-fit to its container.
 - **Chart.js** + a hydration script (charts; see below).
 - **Mermaid** for `<pre class="mermaid">` diagram blocks (see below).
+- **Declarative Web Components** for consistent grids, cards, metrics, charts,
+  and tables.
+- **Artifact-local data feeds** that load one JSON snapshot from `assets/` and
+  bind it to components without authored JavaScript.
 - **An icon sprite** at `/runtime/pi/icons.svg`.
+
+### Declarative components
+
+Use the package-owned component vocabulary when consistency matters more than a
+bespoke layout:
+
+```html
+<pi-data-source name="sales" src="assets/sales.json"></pi-data-source>
+
+<pi-grid columns="3">
+  <pi-metric
+    label="Revenue"
+    data-feed="sales"
+    field="summary.revenue"
+    trend-field="summary.trend"
+  ></pi-metric>
+  <pi-card>
+    <h2>Context</h2>
+    <p>Ordinary semantic HTML remains valid inside cards and grids.</p>
+  </pi-card>
+</pi-grid>
+
+<pi-chart data-feed="sales" field="chart"></pi-chart>
+<pi-table data-feed="sales" field="rows" columns="region,revenue"></pi-table>
+```
+
+Available elements:
+
+- `<pi-grid columns="1|2|3|4">` — responsive grid; collapses to one column on
+  narrow screens.
+- `<pi-card>` — consistent bordered content container.
+- `<pi-metric label value? trend?>` — static metric, or bind `data-feed` plus a
+  dotted `field`; `trend-field` selects an optional trend from the full feed.
+- `<pi-chart>` — consumes a Chart.js JSON config from `data-feed`/`field`, or a
+  nested `.pi-chart-spec` JSON block.
+- `<pi-table data-feed field? columns?>` — consumes an array of JSON objects;
+  `columns` is an optional comma-separated order.
+- `<pi-data-source name src>` — declares a one-shot JSON feed. `src` must be a
+  `.json` path beneath this artifact's `assets/` directory using URL-safe
+  letters, numbers, `.`, `_`, `-`, and `/`. External, root-relative,
+  cross-artifact, encoded, and traversal paths are rejected.
+
+Feed-derived values are inserted as text, not HTML. Feeds load once per page;
+there is no polling or arbitrary browser network access. The existing
+`<canvas data-chart>` convention remains supported for compatibility.
 
 ### Security model — strict CSP (read before authoring)
 
@@ -206,7 +255,10 @@ is served regardless):
 - CSP warnings (`csp/inline-script`, `csp/script-src`, `csp/inline-handler`,
   `csp/javascript-url`) flag JS that the browser/server will block — fix these
   or the behavior is silently dropped.
-- `chart/missing-spec` warns a chart canvas has no JSON config.
+- `chart/missing-spec` warns a chart canvas/component has no JSON config.
+- `feed/invalid-source`, `feed/duplicate-name`, and `feed/unknown` warn about
+  malformed or unresolved file-backed feeds.
+- `component/unknown` warns on unsupported `pi-*` custom elements.
 
 Treat `details.warnings` as advisory, but CSP warnings indicate the page will
 not behave as written — resolve them.

@@ -2,7 +2,10 @@ import { Type } from "typebox";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-import { isSupportedStack } from "./manifest.ts";
+import {
+  getArtifactRenderer,
+  isRegisteredArtifactStack,
+} from "./renderer-registry.ts";
 import { createPreviewServerState, type PreviewServerState } from "./server.ts";
 import {
   artifactsRoot,
@@ -20,8 +23,6 @@ import {
   isArtifactScope,
   type ScopeContext,
 } from "./scope.ts";
-import { validateHtmlArtifact } from "./validation/html.ts";
-import { validateMarkdownArtifact } from "./validation/markdown.ts";
 import type { ArtifactRenderStatus, ValidationFinding } from "./types.ts";
 import {
   openViewerWindow,
@@ -56,6 +57,7 @@ interface ContextWithCwd {
 interface PreviewServerAccessor {
   get: () => Promise<PreviewServerState>;
   peek: () => PreviewServerState | undefined;
+  setSessionContext: (context: ScopeContext) => void;
   close: () => Promise<void>;
 }
 
@@ -91,8 +93,11 @@ function createViewerWindowManager(): ViewerWindowManager {
       return current;
     },
     isOpen() {
-      // A "none" window never actually launched anything to reuse.
-      return current !== undefined && current.mode !== "none";
+      // A "none" window never launched anything, and app mode tracks when its
+      // Chromium process was closed manually.
+      return (
+        current !== undefined && current.mode !== "none" && current.isAlive()
+      );
     },
     async close() {
       await current?.close();
@@ -101,20 +106,59 @@ function createViewerWindowManager(): ViewerWindowManager {
   };
 }
 
-function createPreviewServerAccessor(): PreviewServerAccessor {
+export function createPreviewServerAccessor(
+  createServer: () => Promise<PreviewServerState> = createPreviewServerState,
+): PreviewServerAccessor {
   let previewServer: PreviewServerState | undefined;
+  let previewServerPromise: Promise<PreviewServerState> | undefined;
+  let closePromise: Promise<void> | undefined;
+  let sessionContext: ScopeContext = {};
+  let closed = false;
 
   return {
-    async get() {
-      previewServer ??= await createPreviewServerState();
-      return previewServer;
+    get() {
+      if (closed) {
+        return Promise.reject(new Error("Preview server accessor is closed."));
+      }
+      previewServerPromise ??= createServer()
+        .then(async (server) => {
+          if (closed) {
+            await server.close();
+            throw new Error("Preview server accessor closed during startup.");
+          }
+          previewServer = server;
+          server.setSessionContext(sessionContext);
+          return server;
+        })
+        .catch((error: unknown) => {
+          if (!closed) {
+            previewServerPromise = undefined;
+          }
+          throw error;
+        });
+      return previewServerPromise;
     },
     peek() {
       return previewServer;
     },
-    async close() {
-      await previewServer?.close();
+    setSessionContext(context) {
+      sessionContext = context;
+      previewServer?.setSessionContext(context);
+    },
+    close() {
+      if (closePromise) {
+        return closePromise;
+      }
+      closed = true;
+      const active = previewServer;
+      const pending = previewServerPromise;
       previewServer = undefined;
+      previewServerPromise = undefined;
+      closePromise = (async () => {
+        const server = active ?? (await pending?.catch(() => undefined));
+        await server?.close();
+      })();
+      return closePromise;
     },
   };
 }
@@ -124,15 +168,14 @@ function registerPreviewLifecycle(
   previewServer: PreviewServerAccessor,
   viewerWindow: ViewerWindowManager,
 ): void {
-  // Background resources (the preview server) must NOT start in the factory.
-  // They start here on session_start and are torn down idempotently on
-  // session_shutdown. render_artifact also lazily starts the server if needed.
-  pi.on("session_start", async (_event, ctx) => {
-    const server = await previewServer.get();
-    server.setSessionContext(scopeContextFrom(ctx));
-    // A new/resumed/forked session changes the active scope; nudge any open
-    // viewer to re-fetch its (now differently scoped) list.
-    server.broadcastUpdate();
+  // Background resources must NOT start in the factory or session_start.
+  // /viewer or the first successful render starts the server lazily; shutdown
+  // remains idempotent even when creation never happened or is still pending.
+  pi.on("session_start", (_event, ctx) => {
+    previewServer.setSessionContext(scopeContextFrom(ctx));
+    // Usually no server exists yet: it starts lazily on /viewer or the first
+    // successful render. If one does, refresh its active scope.
+    previewServer.peek()?.broadcastUpdate();
   });
 
   pi.on("session_shutdown", async (_event, _ctx) => {
@@ -176,7 +219,7 @@ async function executeScaffoldArtifact(
   input: ScaffoldArtifactParams,
   ctx: unknown,
 ) {
-  if (!isSupportedStack(input.type)) {
+  if (!isRegisteredArtifactStack(input.type)) {
     throw new Error(`Unsupported artifact type: ${input.type}`);
   }
 
@@ -244,7 +287,7 @@ async function maybeAutoOpen(
     return;
   }
 
-  if (viewerWindow.isOpen()) {
+  if (viewerWindow.isOpen() && server.hasViewerClients()) {
     server.broadcastNavigate(`/artifacts/${encodeURIComponent(artifactId)}/`);
     return;
   }
@@ -263,10 +306,9 @@ async function executeRenderArtifact(
 ) {
   try {
     const artifact = await loadArtifact(input.id);
-    const validation = await validateArtifact(
+    const validation = await getArtifactRenderer(
       artifact.manifest.stack,
-      artifact.entryPath,
-    );
+    ).validate(artifact.entryPath);
 
     const rendered = new Date().toISOString();
     const renderStatus = summarizeRenderStatus({
@@ -615,6 +657,14 @@ function registerViewerCommand(
       }
 
       const preferred = await readViewerMode();
+      if (viewerWindow.isOpen() && server.hasViewerClients()) {
+        server.broadcastNavigate("/viewer");
+        ctx.ui.notify(
+          `Artifact viewer focused: ${server.viewerUrl}. Store: ${artifactsRoot()}`,
+          "info",
+        );
+        return;
+      }
       const window = await viewerWindow.open(server.viewerUrl, preferred);
       ctx.ui.notify(
         `${viewerOpenMessage(window.mode, server.viewerUrl)} Store: ${artifactsRoot()}`,
@@ -700,18 +750,4 @@ function viewerOpenMessage(mode: ViewerWindow["mode"], url: string): string {
     default:
       return `Artifact viewer: ${url} (open this URL manually).`;
   }
-}
-
-function validateArtifact(
-  stack: string,
-  entryPath: string,
-): ReturnType<typeof validateMarkdownArtifact> {
-  switch (stack) {
-    case "markdown":
-      return validateMarkdownArtifact(entryPath);
-    case "html":
-      return validateHtmlArtifact(entryPath);
-  }
-
-  throw new Error(`Unsupported artifact stack: ${stack}`);
 }

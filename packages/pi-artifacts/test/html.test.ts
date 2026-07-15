@@ -21,6 +21,9 @@ test("renderHtmlPage wraps a fragment and injects the shared runtime", () => {
   assert.match(page, /\/runtime\/pico\/pico\.classless\.min\.css/);
   assert.match(page, /\/runtime\/chartjs\/chart\.umd\.js/);
   assert.match(page, /\/runtime\/pi\/chart-hydrate\.js/);
+  assert.match(page, /\/runtime\/pi\/artifact-components\.js/);
+  assert.match(page, /pi-grid/);
+  assert.match(page, /pi-metric/);
   assert.match(page, /^<!doctype html>/);
   assert.match(page, /<title>Dashboard<\/title>/);
   assert.match(page, /<h1>Chart<\/h1>/);
@@ -106,6 +109,36 @@ test("validateHtmlArtifact warns on CSP-blocked authored JavaScript", async (t) 
   assert.equal(result.errors.length, 0);
 });
 
+test("validateHtmlArtifact validates components and local data feeds", async (t) => {
+  const root = await makeTempRoot(t);
+  const scaffolded = await scaffoldArtifact({
+    title: "Component Feeds",
+    stack: HTML_STACK,
+    cwd: "/project",
+    root,
+  });
+  await writeFile(
+    scaffolded.entry,
+    '<pi-data-source name="sales" src="assets/sales.json"></pi-data-source><pi-grid columns="2"><pi-metric label="Revenue" data-feed="sales" field="total"></pi-metric><pi-table data-feed="sales" field="rows"></pi-table></pi-grid>',
+  );
+
+  const result = await validateHtmlArtifact(scaffolded.entry);
+  assert.ok(!result.warnings.some((w) => w.code.startsWith("feed/")));
+  assert.ok(!result.warnings.some((w) => w.code.startsWith("component/")));
+
+  await writeFile(
+    scaffolded.entry,
+    '<pi-data-source name="bad" src="../other/secret.json"></pi-data-source><pi-data-source name="encoded" src="assets/%2e%2e%2fmanifest.json"></pi-data-source><pi-metric data-feed="missing"></pi-metric><pi-unknown></pi-unknown>',
+  );
+  const invalid = await validateHtmlArtifact(scaffolded.entry);
+  assert.equal(
+    invalid.warnings.filter((w) => w.code === "feed/invalid-source").length,
+    2,
+  );
+  assert.ok(invalid.warnings.some((w) => w.code === "feed/unknown"));
+  assert.ok(invalid.warnings.some((w) => w.code === "component/unknown"));
+});
+
 test("validateHtmlArtifact allows a JSON chart spec but warns when missing", async (t) => {
   const root = await makeTempRoot(t);
   const withSpec = await scaffoldArtifact({
@@ -136,6 +169,22 @@ test("validateHtmlArtifact allows a JSON chart spec but warns when missing", asy
   assert.ok(
     missingResult.warnings.some((w) => w.code === "chart/missing-spec"),
   );
+
+  await writeFile(
+    missing.entry,
+    '<pi-chart></pi-chart><script type="application/json" class="pi-chart-spec">{"type":"bar"}</script>',
+  );
+  const siblingSpec = await validateHtmlArtifact(missing.entry);
+  assert.ok(siblingSpec.warnings.some((w) => w.code === "chart/missing-spec"));
+
+  await writeFile(
+    missing.entry,
+    '<pi-chart><script data-kind="application/json">{"type":"bar"}</script></pi-chart>',
+  );
+  const lookalikeSpec = await validateHtmlArtifact(missing.entry);
+  assert.ok(
+    lookalikeSpec.warnings.some((w) => w.code === "chart/missing-spec"),
+  );
 });
 
 test("preview server renders registered html artifacts with CSP", async (t) => {
@@ -146,7 +195,14 @@ test("preview server renders registered html artifacts with CSP", async (t) => {
     cwd: "/project",
     root,
   });
-  await writeFile(scaffolded.entry, "<h1>Hello HTML</h1>");
+  await writeFile(
+    scaffolded.entry,
+    '<pi-data-source name="sales" src="assets/sales.json"></pi-data-source><pi-metric label="Revenue" data-feed="sales" field="total"></pi-metric>',
+  );
+  await writeFile(
+    join(scaffolded.path, "assets", "sales.json"),
+    '{"total":42}',
+  );
 
   const artifact = await loadArtifact(scaffolded.id, root);
   const server = await createPreviewServerState(root);
@@ -164,7 +220,14 @@ test("preview server renders registered html artifacts with CSP", async (t) => {
   const response = await fetch(url);
   assert.equal(response.headers.get("content-security-policy"), BASELINE_CSP);
   const html = await response.text();
-  assert.match(html, /<h1>Hello HTML<\/h1>/);
+  assert.match(html, /<pi-data-source/);
+  assert.match(html, /artifact-components\.js/);
+  const data = await fetch(`${url}assets/sales.json`);
+  assert.equal(
+    data.headers.get("content-type"),
+    "application/json; charset=utf-8",
+  );
+  assert.deepEqual(await data.json(), { total: 42 });
   assert.match(html, /pi-artifact-toolbar/);
   assert.match(html, /← Gallery/);
 });

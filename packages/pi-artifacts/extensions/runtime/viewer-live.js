@@ -21,18 +21,19 @@
  * window switches to it instead of spawning a new one.
  */
 (() => {
-  var tag = document.querySelector("script[data-artifact-id]");
+  var tag = document.querySelector("script[data-viewer-base]");
   var myId = tag ? tag.getAttribute("data-artifact-id") : null;
+  var viewerBase = tag ? tag.getAttribute("data-viewer-base") || "" : "";
 
   var parse = (event) => {
     try {
       return JSON.parse(event.data || "{}") || {};
-    } catch (error) {
+    } catch {
       return {};
     }
   };
 
-  var es = new EventSource("/events");
+  var es = new EventSource(`${viewerBase}/events`);
 
   es.addEventListener("update", (event) => {
     var changedId = parse(event).id || null;
@@ -51,8 +52,9 @@
   es.addEventListener("navigate", (event) => {
     var target = parse(event).path;
     // Only move if we're not already showing the target.
-    if (target && location.pathname !== target) {
-      location.assign(target);
+    var targetPath = target ? `${viewerBase}${target}` : null;
+    if (targetPath && location.pathname !== targetPath) {
+      location.assign(targetPath);
     }
   });
 })();

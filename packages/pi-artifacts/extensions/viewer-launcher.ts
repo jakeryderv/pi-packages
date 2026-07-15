@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { constants } from "node:fs";
 import { access, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -9,6 +9,8 @@ export type ViewerWindowMode = "app" | "browser" | "none";
 
 export interface ViewerWindow {
   mode: ViewerWindowMode;
+  /** Best-effort liveness; browser mode cannot track an external browser tab. */
+  isAlive: () => boolean;
   close: () => Promise<void>;
 }
 
@@ -32,7 +34,7 @@ export async function openViewerWindow(
   const mode = resolveViewerMode(preferred);
 
   if (mode === "none") {
-    return { mode: "none", close: async () => {} };
+    return { mode: "none", isAlive: () => false, close: async () => {} };
   }
 
   if (mode === "browser") {
@@ -163,24 +165,45 @@ async function launchAppWindow(
       detached: false,
     });
 
-    let exited = false;
+    // `spawn()` can fail asynchronously. Do not report app mode until the
+    // process has actually started.
+    await waitForSpawn(child);
+
+    let exited = child.exitCode !== null;
+    const dir = profileDir;
+    let cleanupPromise: Promise<void> | undefined;
+    const cleanup = () => {
+      cleanupPromise ??= rm(dir, { recursive: true, force: true }).catch(
+        () => {},
+      );
+      return cleanupPromise;
+    };
     child.on("error", () => {});
     child.on("exit", () => {
       exited = true;
+      void cleanup();
     });
+    if (exited) {
+      void cleanup();
+    }
 
-    const dir = profileDir;
     return {
       mode: "app",
+      isAlive: () => !exited && child.exitCode === null,
       close: async () => {
         try {
           if (!exited) {
             child.kill();
+            await waitForExit(child, 1_000);
+          }
+          if (!exited) {
+            child.kill("SIGKILL");
+            await waitForExit(child, 500);
           }
         } catch {
           // best effort
         }
-        await rm(dir, { recursive: true, force: true }).catch(() => {});
+        await cleanup();
       },
     };
   } catch {
@@ -191,17 +214,55 @@ async function launchAppWindow(
   }
 }
 
-function openDefaultBrowser(url: string): ViewerWindow {
+async function waitForExit(
+  child: ChildProcess,
+  timeoutMs: number,
+): Promise<void> {
+  if (child.exitCode !== null) {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      child.off("exit", done);
+      resolve();
+    };
+    const timer = setTimeout(done, timeoutMs);
+    child.once("exit", done);
+  });
+}
+
+async function waitForSpawn(child: ChildProcess): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const spawned = () => {
+      child.off("error", failed);
+      resolve();
+    };
+    const failed = (error: Error) => {
+      child.off("spawn", spawned);
+      reject(error);
+    };
+    child.once("spawn", spawned);
+    child.once("error", failed);
+  });
+}
+
+async function openDefaultBrowser(url: string): Promise<ViewerWindow> {
   const command =
     platform === "darwin" ? "open" : platform === "win32" ? "cmd" : "xdg-open";
   const args = platform === "win32" ? ["/c", "start", "", url] : [url];
 
   try {
     const child = spawn(command, args, { stdio: "ignore", detached: true });
-    child.on("error", () => {});
+    await waitForSpawn(child);
     child.unref();
-    return { mode: "browser", close: async () => {} };
+    return {
+      mode: "browser",
+      isAlive: () => true,
+      close: async () => {},
+    };
   } catch {
-    return { mode: "none", close: async () => {} };
+    return { mode: "none", isAlive: () => false, close: async () => {} };
   }
 }

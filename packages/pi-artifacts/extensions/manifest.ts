@@ -1,10 +1,9 @@
+import { isRegisteredArtifactStack } from "./renderer-registry.ts";
 import type {
   ArtifactManifest,
   ArtifactRenderStatus,
   ArtifactStack,
 } from "./types.ts";
-
-const SUPPORTED_STACKS = new Set<ArtifactStack>(["markdown", "html"]);
 
 export interface CreateManifestInput {
   id: string;
@@ -33,10 +32,6 @@ export function createManifest(input: CreateManifestInput): ArtifactManifest {
   };
 }
 
-export function isSupportedStack(value: string): value is ArtifactStack {
-  return SUPPORTED_STACKS.has(value as ArtifactStack);
-}
-
 export function isArtifactManifest(value: unknown): value is ArtifactManifest {
   if (!value || typeof value !== "object") {
     return false;
@@ -48,7 +43,7 @@ export function isArtifactManifest(value: unknown): value is ArtifactManifest {
     typeof candidate.id === "string" &&
     typeof candidate.title === "string" &&
     typeof candidate.stack === "string" &&
-    isSupportedStack(candidate.stack) &&
+    isRegisteredArtifactStack(candidate.stack) &&
     typeof candidate.entry === "string" &&
     typeof candidate.created === "string" &&
     typeof candidate.updated === "string" &&

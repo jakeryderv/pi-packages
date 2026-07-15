@@ -130,9 +130,27 @@ Implemented alongside mermaid:
 - Scope filtering is shared (`extensions/scope.ts`) and degrades to "all"
   when the anchor (session key / cwd) is unknown.
 
+### 0.8.0 — declarative components and viewer hardening
+
+- HTML fragments gain package-owned Web Components for responsive grids,
+  cards, metrics, Chart.js charts, and tables while retaining the
+  no-authored-JavaScript policy.
+- `<pi-data-source>` loads one-shot JSON snapshots from the current artifact's
+  `assets/` directory; `data-feed` and dotted `field` paths bind components to
+  that data. Remote, root-relative, encoded, traversal, and cross-artifact feed
+  sources are rejected.
+- A typed renderer registry now owns stack entry filenames, validation, and
+  page rendering for markdown and HTML.
+- Preview servers start lazily and protect viewer pages, SSE, artifacts, and
+  assets with a random per-server capability path. Package-owned `/runtime`
+  files remain on their stable content-free namespace.
+- Chromium app mode now observes process liveness, waits for launch success,
+  and performs bounded shutdown/profile cleanup.
+
 ## Current security posture
 
-- Artifact previews bind only to localhost.
+- Artifact previews start lazily, bind only to localhost, and require an
+  unguessable per-server capability path for content-bearing routes.
 - Artifact files and runtime files are served from separate namespaces:
   `/artifacts/<id>/...` and `/runtime/<namespace>/...`.
 - Path traversal is rejected in store APIs and server file serving.
@@ -142,7 +160,10 @@ Implemented alongside mermaid:
   - inline event handlers warn,
   - `javascript:` URLs warn,
   - artifact `.js` files are rejected by the server.
-- Runtime JavaScript is package-owned and served only from `/runtime`.
+- Runtime JavaScript is package-owned and served only from `/runtime`; that
+  stable public namespace contains no artifact data.
+- File-backed component feeds are confined to the current bundle's `assets/`
+  directory and render data-derived text with DOM `textContent`.
 - Manifest `lastRender` metadata stores the latest render status so list/viewer
   surfaces can show OK/warning/error/never-rendered state.
 

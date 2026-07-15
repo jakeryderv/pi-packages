@@ -2,21 +2,37 @@
 
 Rich visualization artifacts for the [Pi coding agent](https://pi.dev/). Scaffold,
 validate, and preview artifact bundles — portable markdown documents and an
-interactive html stack (Pico CSS + CSP-clean Chart.js) — in a session-scoped
-viewer.
+interactive html stack (declarative components, Pico CSS, and CSP-clean
+Chart.js) — in a session-scoped viewer.
 
-> **Status: markdown + html, live viewer.** The package can scaffold markdown
+> **Status: markdown + declarative html, live viewer.** The package can scaffold markdown
 > and html artifact bundles, validate/normalize them, serve localhost previews,
 > and show a session-scoped browser gallery via `/viewer` that updates live
 > (Server-Sent Events) as artifacts are rendered or deleted — and open artifact
-> pages reload themselves when re-rendered. html artifacts get
-> a shared runtime (Pico CSS, Chart.js, Mermaid, icons) injected under a strict CSP. See
+> pages reload themselves when re-rendered. html artifacts get a shared runtime
+> (Pico CSS, components, file-backed feeds, Chart.js, Mermaid, icons) injected
+> under a strict CSP. See
 > the [roadmap](https://github.com/jakeryderv/pi-packages/blob/main/packages/pi-artifacts/docs/roadmap.md),
 > [API contract](https://github.com/jakeryderv/pi-packages/blob/main/packages/pi-artifacts/docs/api.md),
 > and [design notes](https://github.com/jakeryderv/pi-packages/blob/main/packages/pi-artifacts/docs/notes/design.md)
 > for the broader plan.
 
-## What's new in 0.7.0
+## What's new in 0.8.0
+
+- **Declarative HTML components**: package-owned `<pi-grid>`, `<pi-card>`,
+  `<pi-metric>`, `<pi-chart>`, and `<pi-table>` Web Components provide a
+  consistent dashboard vocabulary without authored JavaScript or a build step.
+- **Artifact-local data feeds**: `<pi-data-source>` loads one-shot JSON snapshots
+  from the bundle's `assets/` directory and binds them to metrics, charts, and
+  tables with `data-feed` and optional dotted `field` paths.
+- **Viewer hardening**: artifact content, gallery pages, and SSE now use a random
+  per-server capability path; the preview server starts lazily and adds no-store
+  and same-origin resource headers.
+- **Cleaner internals and launcher lifecycle**: renderer selection is centralized
+  in a typed registry, while app mode tracks Chromium liveness, launch failure,
+  and profile cleanup more reliably.
+
+## What was new in 0.7.0
 
 - **Workspace scoping**: the viewer gallery now has a three-way scope —
   this session / this workspace (artifacts created from the same cwd) / all
@@ -73,7 +89,7 @@ bundles.
 - **`scaffold_artifact`** tool — create an empty markdown or html artifact bundle to author into.
 - **`render_artifact`** tool — validate/normalize an authored bundle and preview it on localhost.
   - **markdown:** Prettier + markdownlint + strict KaTeX math; GFM task lists, GitHub-style alerts, footnotes, syntax-highlighted code, and Mermaid fences rendered as live diagrams.
-  - **html:** Prettier + HTMLHint + CSP/chart capability checks; shared runtime (Pico CSS, Chart.js via a JSON chart-spec convention, Mermaid via `<pre class="mermaid">` blocks, an icon sprite) injected from `/runtime`.
+  - **html:** Prettier + HTMLHint + CSP/component capability checks; shared runtime (Pico CSS, declarative Web Components, artifact-local JSON feeds, Chart.js, Mermaid, and icons) injected from `/runtime`.
 - **`list_artifacts`** tool — list artifact bundles in the store, newest first;
   optionally scoped to the current session or workspace (cwd).
 - **`delete_artifact`** tool — delete a bundle and all of its files from the store.
@@ -109,12 +125,15 @@ via provenance metadata in the manifest.
 
 Pi packages run with full system access. This extension serves artifact previews
 only from a localhost-bound server, scoped to the selected artifact directory,
-with a restrictive Content-Security-Policy. html artifacts run under the same
+with an unguessable per-server capability path and restrictive
+Content-Security-Policy. html artifacts run under the same
 strict CSP (`script-src 'self'`), but the package keeps artifacts content-only:
 author-supplied inline JS, authored `<script src>` files, `on*=` handlers, and
 `javascript:` URLs are blocked or rejected, and executable runtime JS is served
-only from the package-owned `/runtime` namespace. Review the source before
-installing.
+only from the package-owned `/runtime` namespace. Viewer, SSE, artifact pages,
+and artifact assets require the random capability path; `/runtime` intentionally
+remains a stable public path because it contains only immutable package-owned
+assets, never artifact content. Review the source before installing.
 
 ## Development
 

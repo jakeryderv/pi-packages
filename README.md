@@ -4,9 +4,9 @@ Monorepo of packages for the [Pi coding agent](https://pi.dev/).
 
 ## Packages
 
-| Package                                 | npm                        | Status                                 |
-| --------------------------------------- | -------------------------- | -------------------------------------- |
-| [`pi-artifacts`](packages/pi-artifacts) | `@jakeryderv/pi-artifacts` | markdown + html artifacts, live viewer |
+| Package                                 | npm                        | Status                                             |
+| --------------------------------------- | -------------------------- | -------------------------------------------------- |
+| [`pi-artifacts`](packages/pi-artifacts) | `@jakeryderv/pi-artifacts` | markdown + declarative html artifacts, live viewer |
 
 ## Documentation layout
 

@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 
-import { renderHtmlPage } from "../extensions/html.ts";
 import { renderMarkdownPage } from "../extensions/markdown.ts";
 import { validateMarkdownArtifact } from "../extensions/validation/markdown.ts";
 

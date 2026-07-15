@@ -1,5 +1,6 @@
+import { randomBytes } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, realpath, stat } from "node:fs/promises";
 import {
   createServer,
   type IncomingMessage,
@@ -8,9 +9,8 @@ import {
 } from "node:http";
 import { extname, resolve } from "node:path";
 
-import { renderHtmlPage } from "./html.ts";
-import { renderMarkdownPage } from "./markdown.ts";
 import { isPathInside } from "./path-safety.ts";
+import { getArtifactRenderer } from "./renderer-registry.ts";
 import { RUNTIME_ROOTS } from "./runtime.ts";
 import {
   type ArtifactScope,
@@ -48,9 +48,12 @@ interface PreviewArtifactRecord {
 export interface PreviewServerState {
   url?: string;
   viewerUrl?: string;
+  healthUrl?: string;
   registerArtifact: (record: PreviewArtifactRecord) => void;
   unregisterArtifact: (id: string) => void;
   artifactUrl: (id: string) => string | undefined;
+  /** Whether at least one gallery or artifact page has a live SSE connection. */
+  hasViewerClients: () => boolean;
   /** Set the active session identity (key + cwd) for gallery scoping. */
   setSessionContext: (context: ScopeContext) => void;
   /**
@@ -79,6 +82,8 @@ interface RequestContext {
   root: string;
   sseClients: Set<ServerResponse>;
   sessionContext: ScopeContext;
+  accessToken: string;
+  basePath: string;
 }
 
 export async function createPreviewServerState(
@@ -86,6 +91,8 @@ export async function createPreviewServerState(
 ): Promise<PreviewServerState> {
   const artifacts = new Map<string, PreviewArtifactRecord>();
   const sseClients = new Set<ServerResponse>();
+  const accessToken = randomBytes(32).toString("base64url");
+  const basePath = `/${accessToken}`;
   let sessionContext: ScopeContext = {};
 
   const server = createServer(async (request, response) => {
@@ -100,7 +107,14 @@ export async function createPreviewServerState(
       const url = new URL(request.url, "http://127.0.0.1");
       await handleRequest(
         url,
-        { artifacts, root, sseClients, sessionContext },
+        {
+          artifacts,
+          root,
+          sseClients,
+          sessionContext,
+          accessToken,
+          basePath,
+        },
         request,
         response,
       );
@@ -118,7 +132,8 @@ export async function createPreviewServerState(
 
   return {
     url: baseUrl,
-    viewerUrl: `${baseUrl}/viewer`,
+    viewerUrl: `${baseUrl}${basePath}/viewer`,
+    healthUrl: `${baseUrl}${basePath}/health`,
     registerArtifact(record) {
       artifacts.set(record.id, record);
     },
@@ -126,7 +141,10 @@ export async function createPreviewServerState(
       artifacts.delete(id);
     },
     artifactUrl(id) {
-      return `${baseUrl}/artifacts/${encodeURIComponent(id)}/`;
+      return `${baseUrl}${basePath}/artifacts/${encodeURIComponent(id)}/`;
+    },
+    hasViewerClients() {
+      return sseClients.size > 0;
     },
     setSessionContext(context) {
       sessionContext = context;
@@ -156,11 +174,38 @@ async function handleRequest(
   request: IncomingMessage,
   response: ServerResponse,
 ): Promise<void> {
-  const { artifacts, root, sseClients, sessionContext } = ctx;
-  const segments = url.pathname
-    .split("/")
-    .filter(Boolean)
-    .map(decodeURIComponent);
+  const { artifacts, root, sseClients, sessionContext, accessToken, basePath } =
+    ctx;
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    response.setHeader("Allow", "GET, HEAD");
+    sendText(response, 405, "Method not allowed");
+    return;
+  }
+
+  const rawSegments = decodePathSegments(url.pathname);
+  if (!rawSegments) {
+    sendText(response, 400, "Malformed request path");
+    return;
+  }
+
+  // Package-owned runtime assets contain no user data and stay on a stable
+  // path. Viewer, SSE, and artifact content require an unguessable capability
+  // path so unrelated local processes cannot read the store by scanning ports.
+  if (rawSegments[0] === "runtime") {
+    await sendRuntimeFile(rawSegments.slice(1).join("/"), response);
+    return;
+  }
+
+  if (rawSegments[0] !== accessToken) {
+    sendText(response, 404, "Not found");
+    return;
+  }
+  const segments = rawSegments.slice(1);
+
+  if (segments[0] === "health") {
+    sendJson(response, { ok: true });
+    return;
+  }
 
   if (segments[0] === "events") {
     addSseClient(sseClients, request, response);
@@ -168,12 +213,13 @@ async function handleRequest(
   }
 
   if (segments.length === 0 || segments[0] === "viewer") {
-    await sendViewer(root, sessionContext, url.searchParams, response);
-    return;
-  }
-
-  if (segments[0] === "runtime") {
-    await sendRuntimeFile(segments.slice(1).join("/"), response);
+    await sendViewer(
+      root,
+      sessionContext,
+      url.searchParams,
+      basePath,
+      response,
+    );
     return;
   }
 
@@ -191,11 +237,36 @@ async function handleRequest(
 
   const relativePath = segments.slice(2).join("/");
   if (!relativePath) {
-    await sendRenderedArtifact(artifact, response);
+    await sendRenderedArtifact(artifact, basePath, response);
     return;
   }
 
   await sendArtifactFile(artifact, relativePath, response);
+}
+
+function decodePathSegments(pathname: string): string[] | undefined {
+  try {
+    const segments: string[] = [];
+    for (const segment of pathname.split("/")) {
+      if (!segment) {
+        continue;
+      }
+      const decoded = decodeURIComponent(segment);
+      if (
+        decoded === "." ||
+        decoded === ".." ||
+        decoded.includes("/") ||
+        decoded.includes("\\") ||
+        decoded.includes("\0")
+      ) {
+        return undefined;
+      }
+      segments.push(decoded);
+    }
+    return segments;
+  } catch {
+    return undefined;
+  }
 }
 
 async function getPreviewArtifact(
@@ -208,7 +279,7 @@ async function getPreviewArtifact(
     return registered;
   }
 
-  return await loadArtifact(id, root).catch(() => undefined);
+  return loadArtifact(id, root).catch(() => undefined);
 }
 
 /**
@@ -260,6 +331,7 @@ async function sendViewer(
   root: string,
   sessionContext: ScopeContext,
   params: URLSearchParams,
+  basePath: string,
   response: ServerResponse,
 ): Promise<void> {
   // `?all` predates `?scope=` and stays as an alias.
@@ -289,7 +361,7 @@ async function sendViewer(
       const stack = escapeHtml(artifact.manifest.stack);
       const cwd = escapeHtml(artifact.manifest.cwd);
       const updated = escapeHtml(artifact.manifest.updated);
-      const href = `/artifacts/${encodeURIComponent(artifact.id)}/`;
+      const href = `${basePath}/artifacts/${encodeURIComponent(artifact.id)}/`;
       const status = renderStatusLabel(artifact.manifest.lastRender);
 
       return `<li>
@@ -299,7 +371,7 @@ async function sendViewer(
       </li>`;
     })
     .join("\n");
-  const clearHref = viewerHref(scope);
+  const clearHref = viewerHref(basePath, scope);
 
   sendHtml(
     response,
@@ -334,8 +406,8 @@ ${artifactChromeStyles()}
 <nav class="viewer-toolbar" aria-label="Artifacts toolbar">
 <h1>Pi Artifacts</h1>
 <div class="viewer-toolbar-actions">
-${viewerScopeSwitcher(scope)}
-<a href="${viewerRefreshHref(params)}">Refresh</a>
+${viewerScopeSwitcher(basePath, scope)}
+<a href="${viewerRefreshHref(basePath, params)}">Refresh</a>
 <span class="pi-artifact-disabled" aria-disabled="true" title="Export support is planned">Export</span>
 </div>
 </nav>
@@ -343,7 +415,7 @@ ${viewerScopeSwitcher(scope)}
 <p>${artifacts.length} of ${scoped.length} artifact${scoped.length === 1 ? "" : "s"}
 · <span class="scope">${viewerScopeLabel(scope)}</span></p>
 </header>
-<form method="get" action="/viewer">
+<form method="get" action="${basePath}/viewer">
 ${scope === "session" ? "" : `<input type="hidden" name="scope" value="${scope}">`}
 <input type="search" name="q" value="${escapeHtml(params.get("q") ?? "")}" placeholder="Search title, id, or cwd" aria-label="Search artifacts">
 ${viewerSelect("stack", stackFilter, [
@@ -361,17 +433,19 @@ ${viewerSelect("status", statusFilter, [
 <button type="submit">Filter</button>
 </form>
 <p class="scope"><a href="${clearHref}">Clear filters</a></p>
-${rows ? `<ul>${rows}</ul>` : `<p class="empty">${viewerEmptyMessage(root, scope)}</p>`}
-<script src="/runtime/pi/viewer-live.js" defer></script>
+${rows ? `<ul>${rows}</ul>` : `<p class="empty">${viewerEmptyMessage(root, basePath, scope)}</p>`}
+<script src="/runtime/pi/viewer-live.js" data-viewer-base="${basePath}" defer></script>
 </body>
 </html>
 `,
   );
 }
 
-function viewerRefreshHref(params: URLSearchParams): string {
+function viewerRefreshHref(basePath: string, params: URLSearchParams): string {
   const query = params.toString();
-  return query ? `/viewer?${escapeHtml(query)}` : "/viewer";
+  return query
+    ? `${basePath}/viewer?${escapeHtml(query)}`
+    : `${basePath}/viewer`;
 }
 
 function viewerSelect(
@@ -395,18 +469,20 @@ const SCOPE_LABELS: Record<ArtifactScope, string> = {
 };
 
 /** Gallery URL for a scope; session is the default and stays param-free. */
-function viewerHref(scope: ArtifactScope): string {
-  return scope === "session" ? "/viewer" : `/viewer?scope=${scope}`;
+function viewerHref(basePath: string, scope: ArtifactScope): string {
+  return scope === "session"
+    ? `${basePath}/viewer`
+    : `${basePath}/viewer?scope=${scope}`;
 }
 
 /** Three-way scope switcher; the active scope renders as plain text. */
-function viewerScopeSwitcher(active: ArtifactScope): string {
+function viewerScopeSwitcher(basePath: string, active: ArtifactScope): string {
   const scopes: ArtifactScope[] = ["session", "workspace", "all"];
   return scopes
     .map((scope) =>
       scope === active
         ? `<span class="pi-artifact-scope-active">${SCOPE_LABELS[scope]}</span>`
-        : `<a href="${viewerHref(scope)}">${SCOPE_LABELS[scope]}</a>`,
+        : `<a href="${viewerHref(basePath, scope)}">${SCOPE_LABELS[scope]}</a>`,
     )
     .join("\n");
 }
@@ -415,48 +491,37 @@ function viewerScopeLabel(scope: ArtifactScope): string {
   return SCOPE_LABELS[scope].toLowerCase();
 }
 
-function viewerEmptyMessage(root: string, scope: ArtifactScope): string {
+function viewerEmptyMessage(
+  root: string,
+  basePath: string,
+  scope: ArtifactScope,
+): string {
   if (scope === "session") {
-    return `No artifacts for this session yet. <a href="${viewerHref("workspace")}">Show this workspace</a> or <a href="${viewerHref("all")}">all artifacts</a>.`;
+    return `No artifacts for this session yet. <a href="${viewerHref(basePath, "workspace")}">Show this workspace</a> or <a href="${viewerHref(basePath, "all")}">all artifacts</a>.`;
   }
   if (scope === "workspace") {
-    return `No artifacts for this workspace yet. <a href="${viewerHref("all")}">Show all artifacts</a>.`;
+    return `No artifacts for this workspace yet. <a href="${viewerHref(basePath, "all")}">Show all artifacts</a>.`;
   }
   return `No artifacts found in ${escapeHtml(root)}.`;
 }
 
 async function sendRenderedArtifact(
   artifact: PreviewArtifactRecord,
+  basePath: string,
   response: ServerResponse,
 ): Promise<void> {
-  switch (artifact.manifest.stack) {
-    case "markdown": {
-      const markdown = await readFile(artifact.entryPath, "utf8");
-      sendHtml(
-        response,
-        renderMarkdownPage(markdown, artifact.manifest.title, {
-          id: artifact.id,
-          title: artifact.manifest.title,
-          stack: artifact.manifest.stack,
-          lastRender: artifact.manifest.lastRender,
-        }),
-      );
-      return;
-    }
-    case "html": {
-      const html = await readFile(artifact.entryPath, "utf8");
-      sendHtml(
-        response,
-        renderHtmlPage(html, artifact.manifest.title, {
-          id: artifact.id,
-          title: artifact.manifest.title,
-          stack: artifact.manifest.stack,
-          lastRender: artifact.manifest.lastRender,
-        }),
-      );
-      return;
-    }
-  }
+  const source = await readFile(artifact.entryPath, "utf8");
+  const renderer = getArtifactRenderer(artifact.manifest.stack);
+  sendHtml(
+    response,
+    renderer.render(source, artifact.manifest.title, {
+      id: artifact.id,
+      title: artifact.manifest.title,
+      stack: artifact.manifest.stack,
+      lastRender: artifact.manifest.lastRender,
+      basePath,
+    }),
+  );
 }
 
 async function sendRuntimeFile(
@@ -492,14 +557,36 @@ async function sendArtifactFile(
     return;
   }
 
+  let realArtifactPath: string;
+  let realFilePath: string;
+  try {
+    [realArtifactPath, realFilePath] = await Promise.all([
+      realpath(artifact.path),
+      realpath(filePath),
+    ]);
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      sendText(response, 404, "Not found");
+      return;
+    }
+    throw error;
+  }
+  if (!isPathInside(realArtifactPath, realFilePath)) {
+    sendText(response, 403, "Forbidden");
+    return;
+  }
+
   // Artifact bundles are content-only: executable JavaScript is available only
   // through the package-owned /runtime namespace, not author-provided files.
-  if (extname(filePath).toLowerCase() === ".js") {
+  if (
+    extname(filePath).toLowerCase() === ".js" ||
+    extname(realFilePath).toLowerCase() === ".js"
+  ) {
     sendText(response, 403, "Artifact JavaScript files are not executable.");
     return;
   }
 
-  await sendStaticFile(filePath, response);
+  await sendStaticFile(realFilePath, response);
 }
 
 async function sendStaticFile(
@@ -527,12 +614,20 @@ function setSecurityHeaders(response: ServerResponse): void {
   response.setHeader("Content-Security-Policy", BASELINE_CSP);
   response.setHeader("X-Content-Type-Options", "nosniff");
   response.setHeader("Referrer-Policy", "no-referrer");
+  response.setHeader("Cache-Control", "no-store");
+  response.setHeader("Cross-Origin-Resource-Policy", "same-origin");
 }
 
 function sendHtml(response: ServerResponse, body: string): void {
   response.statusCode = 200;
   response.setHeader("Content-Type", "text/html; charset=utf-8");
   response.end(body);
+}
+
+function sendJson(response: ServerResponse, body: unknown): void {
+  response.statusCode = 200;
+  response.setHeader("Content-Type", "application/json; charset=utf-8");
+  response.end(`${JSON.stringify(body)}\n`);
 }
 
 function sendText(

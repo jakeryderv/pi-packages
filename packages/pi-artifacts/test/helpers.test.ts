@@ -4,6 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import {
+  getArtifactRenderer,
+  isRegisteredArtifactStack,
+} from "../extensions/renderer-registry.ts";
 import { slugifyTitle, suffixSlug } from "../extensions/slug.ts";
 import {
   isViewerMode,
@@ -16,6 +20,14 @@ import {
   buildAppWindowArgs,
   openViewerWindow,
 } from "../extensions/viewer-launcher.ts";
+
+test("renderer registry owns stack entry and dispatch metadata", () => {
+  assert.equal(getArtifactRenderer("markdown").entryFile, "index.md");
+  assert.equal(getArtifactRenderer("html").entryFile, "index.html");
+  assert.equal(isRegisteredArtifactStack("markdown"), true);
+  assert.equal(isRegisteredArtifactStack("unknown"), false);
+  assert.throws(() => getArtifactRenderer("unknown"), /Unsupported/);
+});
 
 test("buildAppWindowArgs builds an isolated chromeless app window", () => {
   assert.deepEqual(buildAppWindowArgs("http://x/viewer", "/tmp/profile"), [
@@ -33,6 +45,9 @@ test("openViewerWindow uses app mode when a Chromium-family browser resolves", a
   try {
     const window = await openViewerWindow("http://127.0.0.1:9/viewer");
     assert.equal(window.mode, "app");
+    assert.equal(typeof window.isAlive(), "boolean");
+    await window.close();
+    assert.equal(window.isAlive(), false);
     await window.close();
   } finally {
     if (previous === undefined) {

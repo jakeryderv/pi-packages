@@ -21,6 +21,15 @@ interface HtmlHintLike {
 
 const { HTMLHint } = require("htmlhint") as { HTMLHint: HtmlHintLike };
 
+const SUPPORTED_COMPONENTS = new Set([
+  "pi-data-source",
+  "pi-grid",
+  "pi-card",
+  "pi-metric",
+  "pi-chart",
+  "pi-table",
+]);
+
 /**
  * html validation gate (Phase C, Pass 2).
  *
@@ -49,6 +58,7 @@ export async function validateHtmlArtifact(
   warnings.push(...lintHtml(formatted, entryPath));
   warnings.push(...findCspWarnings(formatted, entryPath));
   warnings.push(...findChartWarnings(formatted, entryPath));
+  warnings.push(...findComponentWarnings(formatted, entryPath));
 
   return { warnings, errors };
 }
@@ -172,6 +182,128 @@ function findChartWarnings(
   }
 
   return findings;
+}
+
+function findComponentWarnings(
+  html: string,
+  entryPath: string,
+): ValidationFinding[] {
+  const findings: ValidationFinding[] = [];
+  const declaredFeeds = collectFeedDeclarations(html, entryPath, findings);
+  findComponentUsageWarnings(html, entryPath, declaredFeeds, findings);
+  return findings;
+}
+
+function collectFeedDeclarations(
+  html: string,
+  entryPath: string,
+  findings: ValidationFinding[],
+): Set<string> {
+  const declaredFeeds = new Set<string>();
+  for (const match of html.matchAll(/<pi-data-source\b([^>]*)>/gi)) {
+    const attrs = match[1] ?? "";
+    const name = attributeValue(attrs, "name");
+    const src = attributeValue(attrs, "src");
+    if (!name || !src || !isArtifactAssetSource(src)) {
+      pushAt(findings, html, match.index, {
+        code: "feed/invalid-source",
+        message:
+          '<pi-data-source> requires a name and an artifact-local src beneath "assets/".',
+        file: entryPath,
+      });
+      continue;
+    }
+    if (declaredFeeds.has(name)) {
+      pushAt(findings, html, match.index, {
+        code: "feed/duplicate-name",
+        message: `Data feed "${name}" is declared more than once.`,
+        file: entryPath,
+      });
+    }
+    declaredFeeds.add(name);
+  }
+  return declaredFeeds;
+}
+
+function findComponentUsageWarnings(
+  html: string,
+  entryPath: string,
+  declaredFeeds: Set<string>,
+  findings: ValidationFinding[],
+): void {
+  for (const match of html.matchAll(/<(pi-[a-z0-9-]+)\b([^>]*)>/gi)) {
+    const tag = (match[1] ?? "").toLowerCase();
+    const attrs = match[2] ?? "";
+    if (!SUPPORTED_COMPONENTS.has(tag)) {
+      pushAt(findings, html, match.index, {
+        code: "component/unknown",
+        message: `Unknown pi-artifacts component <${tag}>.`,
+        file: entryPath,
+      });
+      continue;
+    }
+    if (tag === "pi-data-source") {
+      continue;
+    }
+
+    const feed = attributeValue(attrs, "data-feed");
+    if (feed && !declaredFeeds.has(feed)) {
+      pushAt(findings, html, match.index, {
+        code: "feed/unknown",
+        message: `Component references undeclared data feed "${feed}". Add <pi-data-source name="${feed}" src="assets/data.json">.`,
+        file: entryPath,
+      });
+    }
+    if (tag === "pi-chart" && !feed && !hasNestedChartSpec(html, match)) {
+      pushAt(findings, html, match.index, {
+        code: "chart/missing-spec",
+        message:
+          "<pi-chart> needs data-feed or a nested JSON chart spec to render.",
+        file: entryPath,
+      });
+    }
+  }
+}
+
+function hasNestedChartSpec(html: string, match: RegExpMatchArray): boolean {
+  if (match.index === undefined) {
+    return false;
+  }
+  const contentStart = match.index + match[0].length;
+  const contentEnd = html.toLowerCase().indexOf("</pi-chart>", contentStart);
+  if (contentEnd === -1) {
+    return false;
+  }
+  const content = html.slice(contentStart, contentEnd);
+  for (const script of content.matchAll(/<script\b([^>]*)>/gi)) {
+    const attributes = script[1] ?? "";
+    const type = attributeValue(attributes, "type")?.toLowerCase();
+    const classes = (attributeValue(attributes, "class") ?? "")
+      .split(/\s+/)
+      .filter(Boolean);
+    if (type === "application/json" || classes.includes("pi-chart-spec")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isArtifactAssetSource(source: string): boolean {
+  return (
+    /^assets\/[A-Za-z0-9][A-Za-z0-9._/-]*\.json$/.test(source) &&
+    !source.split("/").some((part) => part === "." || part === "..")
+  );
+}
+
+function attributeValue(attributes: string, name: string): string | undefined {
+  for (const match of attributes.matchAll(
+    /([a-z][a-z0-9-]*)\s*=\s*["']([^"']+)["']/gi,
+  )) {
+    if ((match[1] ?? "").toLowerCase() === name) {
+      return match[2];
+    }
+  }
+  return undefined;
 }
 
 function pushAt(

@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 
+import { createPreviewServerAccessor } from "../extensions/index.ts";
 import {
   BASELINE_CSP,
   createPreviewServerState,
+  type PreviewServerState,
 } from "../extensions/server.ts";
 import {
   loadArtifact,
@@ -16,6 +18,75 @@ import {
 
 const MARKDOWN_STACK = "markdown";
 const HTML_STACK = "html";
+
+test("preview server accessor starts lazily and single-flights creation", async (t) => {
+  const root = await makeTempRoot(t);
+  await scaffoldArtifact({
+    title: "Scoped",
+    stack: MARKDOWN_STACK,
+    cwd: "/project",
+    root,
+    sessionKey: "session-a",
+  });
+  let creations = 0;
+  const accessor = createPreviewServerAccessor(async () => {
+    creations += 1;
+    return createPreviewServerState(root);
+  });
+  t.after(() => accessor.close());
+
+  accessor.setSessionContext({ sessionKey: "session-a", cwd: "/project" });
+  assert.equal(accessor.peek(), undefined);
+  assert.equal(creations, 0);
+
+  const [first, second] = await Promise.all([accessor.get(), accessor.get()]);
+  assert.equal(first, second);
+  assert.equal(creations, 1);
+  assert.match(await (await fetch(first.viewerUrl!)).text(), /Scoped/);
+
+  await accessor.close();
+  await accessor.close();
+});
+
+test("preview server accessor closes a retry that races shutdown", async () => {
+  let creations = 0;
+  let resolveSecond: ((server: PreviewServerState) => void) | undefined;
+  let closes = 0;
+  const fakeServer: PreviewServerState = {
+    registerArtifact() {},
+    unregisterArtifact() {},
+    artifactUrl: () => undefined,
+    hasViewerClients: () => false,
+    setSessionContext() {},
+    broadcastUpdate() {},
+    broadcastNavigate() {},
+    close: async () => {
+      closes += 1;
+    },
+  };
+  const accessor = createPreviewServerAccessor(() => {
+    creations += 1;
+    if (creations === 1) {
+      return Promise.reject(new Error("first start failed"));
+    }
+    return new Promise<PreviewServerState>((resolve) => {
+      resolveSecond = resolve;
+    });
+  });
+
+  await assert.rejects(accessor.get(), /first start failed/);
+  const retry = accessor.get();
+  const retryRejected = assert.rejects(retry, /closed during startup/);
+  const closing = accessor.close();
+  assert.ok(resolveSecond);
+  resolveSecond(fakeServer);
+  await Promise.all([retryRejected, closing]);
+
+  assert.equal(creations, 2);
+  assert.equal(closes, 1);
+  assert.equal(accessor.peek(), undefined);
+  await assert.rejects(accessor.get(), /accessor is closed/);
+});
 
 test("preview server viewer lists store artifacts", async (t) => {
   const root = await makeTempRoot(t);
@@ -203,12 +274,42 @@ test("viewer shows all sessions when no session key is set", async (t) => {
   assert.match(html, /Unscoped/);
 });
 
+test("protected routes require the per-server capability path", async (t) => {
+  const root = await makeTempRoot(t);
+  const server = await createPreviewServerState(root);
+  t.after(() => server.close());
+
+  const missing = await fetch(`${server.url}/viewer`);
+  assert.equal(missing.status, 404);
+  const wrong = await fetch(`${server.url}/wrong/viewer`);
+  assert.equal(wrong.status, 404);
+
+  assert.ok(server.healthUrl);
+  const health = await fetch(`${server.url}${capabilityPath(server)}/health`);
+  assert.equal(health.status, 200);
+  assert.deepEqual(await health.json(), { ok: true });
+  assert.equal(health.headers.get("cache-control"), "no-store");
+  assert.equal(
+    health.headers.get("cross-origin-resource-policy"),
+    "same-origin",
+  );
+
+  const rejectedMethod = await fetch(server.viewerUrl!, { method: "POST" });
+  assert.equal(rejectedMethod.status, 405);
+  assert.equal(rejectedMethod.headers.get("allow"), "GET, HEAD");
+
+  const other = await createPreviewServerState(root);
+  t.after(() => other.close());
+  assert.notEqual(capabilityPath(server), capabilityPath(other));
+});
+
 test("events endpoint streams an update on broadcast and ends on close", async (t) => {
   const root = await makeTempRoot(t);
   const server = await createPreviewServerState(root);
+  t.after(() => server.close());
 
   const controller = new AbortController();
-  const response = await fetch(`${server.url}/events`, {
+  const response = await fetch(protectedServerUrl(server, "/events"), {
     signal: controller.signal,
   });
   assert.equal(response.status, 200);
@@ -300,6 +401,31 @@ test("preview server renders registered markdown artifacts with CSP", async (t) 
   );
   assert.equal(await assetResponse.text(), "<svg></svg>");
 
+  const encodedTraversal = await fetch(`${url}assets/%2e%2e%2fmanifest.json`);
+  assert.notEqual(encodedTraversal.status, 200);
+
+  const externalFile = join(root, "outside.json");
+  await writeFile(externalFile, '{"secret":true}');
+  let symlinkCreated = false;
+  try {
+    await symlink(externalFile, join(scaffolded.path, "assets", "leak.json"));
+    symlinkCreated = true;
+  } catch (error) {
+    if (
+      !isNodeError(error) ||
+      (error.code !== "EPERM" && error.code !== "EACCES")
+    ) {
+      throw error;
+    }
+    t.diagnostic(
+      "Symlink creation is unavailable; skipping symlink confinement assertion.",
+    );
+  }
+  if (symlinkCreated) {
+    const leaked = await fetch(`${url}assets/leak.json`);
+    assert.equal(leaked.status, 403);
+  }
+
   await writeFile(join(scaffolded.path, "assets", "app.js"), "alert(1);");
   const scriptResponse = await fetch(`${url}assets/app.js`);
   assert.equal(scriptResponse.status, 403);
@@ -335,6 +461,12 @@ test("preview server serves namespaced runtime assets and guards traversal", asy
   const hydrate = await fetch(`${server.url}/runtime/pi/chart-hydrate.js`);
   assert.equal(hydrate.status, 200);
 
+  const components = await fetch(
+    `${server.url}/runtime/pi/artifact-components.js`,
+  );
+  assert.equal(components.status, 200);
+  assert.match(await components.text(), /pi-data-source/);
+
   const icons = await fetch(`${server.url}/runtime/pi/icons.svg`);
   assert.equal(icons.status, 200);
 
@@ -346,6 +478,32 @@ test("preview server serves namespaced runtime assets and guards traversal", asy
   );
   assert.notEqual(traversal.status, 200);
 });
+
+function protectedServerUrl(
+  server: Awaited<ReturnType<typeof createPreviewServerState>>,
+  path: string,
+): string {
+  return `${server.url}${capabilityPath(server)}${path}`;
+}
+
+function capabilityPath(
+  server: Awaited<ReturnType<typeof createPreviewServerState>>,
+): string {
+  let viewer: URL;
+  try {
+    viewer = new URL(server.viewerUrl!);
+  } catch {
+    throw new Error("Preview server returned an invalid viewer URL.");
+  }
+  assert.equal(viewer.protocol, "http:");
+  assert.equal(viewer.hostname, "127.0.0.1");
+  assert.equal(viewer.pathname.endsWith("/viewer"), true);
+  return viewer.pathname.slice(0, -"/viewer".length);
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
+}
 
 async function makeTempRoot(t: TestContext): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "pi-artifacts-test-"));

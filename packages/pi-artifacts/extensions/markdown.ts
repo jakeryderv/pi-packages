@@ -209,10 +209,12 @@ export function renderMarkdownPage(
   const body = renderMarkdownBody(markdown);
   const escapedTitle = escapeHtml(title);
   const artifactId = typeof artifact === "string" ? artifact : artifact?.id;
+  const viewerBase =
+    typeof artifact === "object" ? (artifact.basePath ?? "") : "";
   const toolbar =
     typeof artifact === "object" ? renderArtifactToolbar(artifact) : "";
   const liveReload = artifactId
-    ? `<script src="/runtime/pi/viewer-live.js" data-artifact-id="${escapeHtml(artifactId)}" defer></script>\n`
+    ? `<script src="/runtime/pi/viewer-live.js" data-artifact-id="${escapeHtml(artifactId)}" data-viewer-base="${escapeHtml(viewerBase)}" defer></script>\n`
     : "";
   // The mermaid bundle is multi-megabyte; only documents that actually
   // contain a diagram pay for it.
