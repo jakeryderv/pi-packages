@@ -1,5 +1,10 @@
 const NON_ALPHANUMERIC = /[^a-z0-9]+/g;
 const EDGE_DASHES = /^-+|-+$/g;
+const ARTIFACT_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+export function isArtifactId(value: string): boolean {
+  return ARTIFACT_ID.test(value);
+}
 
 export function slugifyTitle(title: string): string {
   const slug = title

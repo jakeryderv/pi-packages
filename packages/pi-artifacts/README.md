@@ -17,6 +17,16 @@ Chart.js) — in a session-scoped viewer.
 > and [design notes](https://github.com/jakeryderv/pi-packages/blob/main/packages/pi-artifacts/docs/notes/design.md)
 > for the broader plan.
 
+## What's new in 0.8.1
+
+- **Correct Markdown math boundaries**: KaTeX rendering now operates on parsed
+  Markdown text tokens, preserving dollar-delimited text inside inline and fenced
+  code as code and avoiding ambiguous currency pairs.
+- **Safer store operations**: artifact IDs must be one generated slug segment,
+  and concurrent manifest updates use independent atomic temporary files.
+- **Dependency hardening**: the minimum `markdown-it` version is raised to the
+  patched 14.3 release line.
+
 ## What's new in 0.8.0
 
 - **Declarative HTML components**: package-owned `<pi-grid>`, `<pi-card>`,
@@ -99,8 +109,10 @@ bundles.
 - **`/viewer`** command — open a live gallery of artifacts with a three-way
   scope (this session / this workspace / all artifacts), search/filter
   controls, render status badges, and auto-updating via Server-Sent Events as
-  you render or delete. Gallery and artifact pages include a persistent toolbar with
-  navigation/actions, ready for future export controls. When a Chromium-family
+  you render or delete. Gallery and shared-shell artifact pages include a
+  persistent toolbar with navigation/actions, ready for future export controls.
+  Full authored HTML documents deliberately opt out of the shared shell, including
+  its toolbar and live reload. When a Chromium-family
   browser is available it opens in a dedicated, chromeless app
   window (isolated profile, closed on session shutdown); otherwise it falls back
   to your default browser.
@@ -138,9 +150,12 @@ assets, never artifact content. Review the source before installing.
 ## Development
 
 ```bash
-# from the monorepo root
+# install from the monorepo root
 npm install
-pi -e ./packages/pi-artifacts   # load the package for a single run
+
+# load the package for one isolated run from a scratch directory
+cd "$(mktemp -d)"
+pi -e /absolute/path/to/pi-packages/packages/pi-artifacts
 ```
 
 ## License

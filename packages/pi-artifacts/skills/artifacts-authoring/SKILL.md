@@ -182,7 +182,8 @@ There is no JS framework (no Alpine/React/etc.). Get interactivity without JS:
 
 Inline `<style>` and `style=` attributes ARE allowed. A full HTML document
 (with its own `<!doctype>`/`<html>`) is served verbatim and opts OUT of the
-injected runtime — only do this when you deliberately want no Pico/Chart.js.
+shared shell, including the injected runtime, artifact toolbar, and live reload —
+only do this when you deliberately want none of those viewer features.
 
 ### Charts (CSP-clean Chart.js)
 

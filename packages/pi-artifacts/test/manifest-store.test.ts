@@ -187,6 +187,17 @@ test("deleteArtifact removes a bundle and rejects traversal ids", async (t) => {
     () => deleteArtifact("../escape", root),
     /Invalid artifact id/,
   );
+  const nested = await scaffoldArtifact({
+    title: "Nested Guard",
+    stack: MARKDOWN_STACK,
+    cwd: "/project",
+    root,
+  });
+  await assert.rejects(
+    () => deleteArtifact(`${nested.id}/assets`, root),
+    /Invalid artifact id/,
+  );
+  assert.equal((await stat(join(nested.path, "assets"))).isDirectory(), true);
 });
 
 test("loadArtifact rejects traversal ids and manifest entry traversal", async (t) => {
@@ -272,6 +283,35 @@ test("writeManifest replaces the manifest atomically with no temp litter", async
   assert.deepEqual(files.sort(), ["assets", "index.md", "manifest.json"]);
   const reloaded = await loadArtifact(scaffolded.id, root);
   assert.equal(reloaded.manifest.title, "Updated Title");
+});
+
+test("concurrent manifest writes use independent atomic temp files", async (t) => {
+  const root = await makeTempRoot(t);
+  const scaffolded = await scaffoldArtifact({
+    title: "Concurrent Writes",
+    stack: MARKDOWN_STACK,
+    cwd: "/project",
+    root,
+  });
+  const artifact = await loadArtifact(scaffolded.id, root);
+
+  await Promise.all([
+    writeManifest(
+      scaffolded.id,
+      { ...artifact.manifest, title: "Writer One" },
+      root,
+    ),
+    writeManifest(
+      scaffolded.id,
+      { ...artifact.manifest, title: "Writer Two" },
+      root,
+    ),
+  ]);
+
+  const files = await readdir(artifact.path);
+  assert.deepEqual(files.sort(), ["assets", "index.md", "manifest.json"]);
+  const reloaded = await loadArtifact(scaffolded.id, root);
+  assert.ok(["Writer One", "Writer Two"].includes(reloaded.manifest.title));
 });
 
 test("deleteArtifacts deletes by age using manifest.updated", async (t) => {

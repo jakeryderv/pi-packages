@@ -8,7 +8,7 @@ import {
   getArtifactRenderer,
   isRegisteredArtifactStack,
 } from "../extensions/renderer-registry.ts";
-import { slugifyTitle, suffixSlug } from "../extensions/slug.ts";
+import { isArtifactId, slugifyTitle, suffixSlug } from "../extensions/slug.ts";
 import {
   isViewerMode,
   readAutoOpen,
@@ -144,4 +144,12 @@ test("suffixSlug leaves the first id untouched and appends numeric suffixes", ()
   assert.equal(suffixSlug("q4-revenue", 1), "q4-revenue");
   assert.equal(suffixSlug("q4-revenue", 2), "q4-revenue-2");
   assert.equal(suffixSlug("q4-revenue", 3), "q4-revenue-3");
+});
+
+test("artifact ids are one generated slug segment", () => {
+  assert.equal(isArtifactId("q4-revenue-2"), true);
+  assert.equal(isArtifactId("artifact"), true);
+  assert.equal(isArtifactId("artifact/assets"), false);
+  assert.equal(isArtifactId("../artifact"), false);
+  assert.equal(isArtifactId("Artifact"), false);
 });

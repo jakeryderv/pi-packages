@@ -4,6 +4,7 @@ import * as katex from "katex";
 import { lint } from "markdownlint/promise";
 import prettier from "prettier";
 
+import { findMarkdownMathSpans } from "../markdown-math.ts";
 import type { RenderArtifactDetails, ValidationFinding } from "../types.ts";
 
 export async function validateMarkdownArtifact(
@@ -74,32 +75,13 @@ function findKatexErrors(
   entryPath: string,
 ): ValidationFinding[] {
   const findings: ValidationFinding[] = [];
-  const scanText = stripFencedCodeBlocks(markdown);
+  const scanText = stripInlineCodeSpans(stripFencedCodeBlocks(markdown));
 
-  for (const match of scanText.matchAll(/\$\$([\s\S]+?)\$\$/g)) {
-    const expression = match[1];
-    if (match.index === undefined || expression === undefined) {
-      continue;
-    }
-    const line = lineForIndex(scanText, match.index);
+  for (const span of findMarkdownMathSpans(scanText)) {
+    const line = lineForIndex(scanText, span.start);
     validateKatexExpression({
-      expression: expression.trim(),
-      displayMode: true,
-      entryPath,
-      line,
-      findings,
-    });
-  }
-
-  for (const match of scanText.matchAll(/(?<!\$)\$([^\n$]+?)\$(?!\$)/g)) {
-    const expression = match[1];
-    if (match.index === undefined || expression === undefined) {
-      continue;
-    }
-    const line = lineForIndex(scanText, match.index);
-    validateKatexExpression({
-      expression: expression.trim(),
-      displayMode: false,
+      expression: span.expression,
+      displayMode: span.displayMode,
       entryPath,
       line,
       findings,
@@ -107,6 +89,36 @@ function findKatexErrors(
   }
 
   return findings;
+}
+
+function stripInlineCodeSpans(markdown: string): string {
+  const characters = markdown.split("");
+  let cursor = 0;
+
+  while (cursor < markdown.length) {
+    if (markdown[cursor] !== "`") {
+      cursor += 1;
+      continue;
+    }
+    let markerLength = 1;
+    while (markdown[cursor + markerLength] === "`") {
+      markerLength += 1;
+    }
+    const marker = "`".repeat(markerLength);
+    const close = markdown.indexOf(marker, cursor + markerLength);
+    if (close === -1) {
+      cursor += markerLength;
+      continue;
+    }
+    for (let index = cursor; index < close + markerLength; index += 1) {
+      if (characters[index] !== "\n" && characters[index] !== "\r") {
+        characters[index] = " ";
+      }
+    }
+    cursor = close + markerLength;
+  }
+
+  return characters.join("");
 }
 
 function validateKatexExpression(input: {

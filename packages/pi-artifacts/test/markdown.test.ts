@@ -45,6 +45,44 @@ test("validateMarkdownArtifact does not treat math exponents as block references
   assert.equal(blockReferenceWarnings[0]?.line, 7);
 });
 
+test("markdown math ignores inline and fenced code", async (t) => {
+  const root = await makeTempRoot(t);
+  const entryPath = join(root, "index.md");
+  const markdown =
+    'Inline code: `$\\definitelyunknown{}$`\n\n```js\nconst formula = "$x$";\n```\n\nActual math: $x^2$\n';
+  await writeFile(entryPath, markdown);
+
+  const validation = await validateMarkdownArtifact(entryPath);
+  assert.equal(validation.errors.length, 0);
+
+  const html = renderMarkdownPage(markdown, "Math boundaries");
+  assert.match(html, /<code>\$\\definitelyunknown\{\}\$<\/code>/);
+  assert.match(html, /hljs-string[^>]*>&quot;\$x\$&quot;/);
+  assert.match(html, /class="katex"/);
+  assert.doesNotMatch(html, /<code><span class="katex"/);
+});
+
+test("markdown math preserves ambiguous currency text", () => {
+  const html = renderMarkdownPage(
+    "Costs $5 and $10, while the formula is $x + 1$.",
+    "Currency",
+  );
+
+  assert.match(html, /Costs \$5 and \$10/);
+  assert.match(html, /annotation encoding="application\/x-tex">x \+ 1/);
+});
+
+test("markdown math renders a standalone display block", () => {
+  const html = renderMarkdownPage(
+    "Before\n\n$$\nx^2 + y^2\n$$\n\nAfter\n",
+    "Display",
+  );
+
+  assert.match(html, /class="katex-display"/);
+  assert.match(html, /annotation encoding="application\/x-tex">x\^2 \+ y\^2/);
+  assert.doesNotMatch(html, /<p><span class="katex-display"/);
+});
+
 test("renderMarkdownPage renders task lists as checkboxes", () => {
   const html = renderMarkdownPage(
     "- [x] Done item\n- [ ] Pending item\n",

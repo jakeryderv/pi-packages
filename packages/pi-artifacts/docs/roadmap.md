@@ -147,6 +147,16 @@ Implemented alongside mermaid:
 - Chromium app mode now observes process liveness, waits for launch success,
   and performs bounded shutdown/profile cleanup.
 
+### 0.8.1 — correctness and store hardening
+
+- Markdown math is parsed only from Markdown text tokens, so inline/fenced code
+  and ambiguous currency text remain literal.
+- Store APIs reject nested paths and other values outside the generated artifact
+  ID format.
+- Concurrent manifest updates use unique same-directory temporary files before
+  atomic rename.
+- `markdown-it` requires the patched 14.3 release line.
+
 ## Current security posture
 
 - Artifact previews start lazily, bind only to localhost, and require an

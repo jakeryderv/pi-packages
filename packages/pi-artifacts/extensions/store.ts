@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   mkdir,
   readdir,
@@ -15,7 +16,7 @@ import { CONFIG_DIR_NAME } from "@earendil-works/pi-coding-agent";
 import { createManifest, isArtifactManifest } from "./manifest.ts";
 import { isPathInside } from "./path-safety.ts";
 import { getArtifactRenderer } from "./renderer-registry.ts";
-import { slugifyTitle, suffixSlug } from "./slug.ts";
+import { isArtifactId, slugifyTitle, suffixSlug } from "./slug.ts";
 import type {
   ArtifactManifest,
   ArtifactStack,
@@ -53,6 +54,9 @@ export function entryPath(
 }
 
 function validateArtifactBundlePath(id: string, root: string): string {
+  if (!isArtifactId(id)) {
+    throw new Error(`Invalid artifact id: ${id}`);
+  }
   const path = artifactPath(id, root);
   const resolvedRoot = resolve(root);
   if (!isPathInside(resolvedRoot, path) || resolve(path) === resolvedRoot) {
@@ -234,10 +238,17 @@ export async function writeManifest(
 ): Promise<void> {
   // Write-then-rename so a crash mid-write can never leave a truncated
   // manifest.json behind (the store is shared across concurrent sessions).
+  validateArtifactBundlePath(id, root);
   const path = manifestPath(id, root);
-  const tempPath = `${path}.tmp`;
-  await writeFile(tempPath, `${JSON.stringify(manifest, null, 2)}\n`);
-  await rename(tempPath, path);
+  const tempPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(tempPath, `${JSON.stringify(manifest, null, 2)}\n`, {
+      flag: "wx",
+    });
+    await rename(tempPath, path);
+  } finally {
+    await rm(tempPath, { force: true }).catch(() => {});
+  }
 }
 
 export interface DeleteArtifactsInput {

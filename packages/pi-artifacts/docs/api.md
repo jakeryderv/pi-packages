@@ -127,8 +127,9 @@ Structured result (`details`):
 ```
 
 - Deletes the entire bundle directory and unregisters any active preview.
-- Rejects ids that escape the store (path traversal) and ids that do not exist;
-  failures return `{ ok: false, id, error }`.
+- Rejects ids that are not one generated slug segment (including nested paths),
+  ids that escape the store, and ids that do not exist; failures return
+  `{ ok: false, id, error }`.
 
 ## `delete_artifacts`
 
@@ -312,7 +313,8 @@ Consumers select a feed with `data-feed` and may select nested data using a
 dotted `field` path. Feed-derived metric and table values are inserted with
 `textContent`, never interpreted as HTML. The component runtime is injected
 only for HTML fragments; full authored documents retain their existing verbatim
-opt-out behavior.
+opt-out behavior and therefore receive no shared runtime, artifact toolbar, or
+live reload script.
 
 ## Preview server baseline
 

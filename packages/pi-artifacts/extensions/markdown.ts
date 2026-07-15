@@ -2,6 +2,7 @@ import { createRequire } from "node:module";
 
 import * as katex from "katex";
 
+import { findMarkdownMathSpans } from "./markdown-math.ts";
 import { RUNTIME_URLS } from "./runtime.ts";
 import {
   artifactChromeStyles,
@@ -97,6 +98,7 @@ markdownIt.use(footnotePlugin);
 const ALERT_TYPES = new Set(["NOTE", "TIP", "IMPORTANT", "WARNING", "CAUTION"]);
 
 markdownIt.core.ruler.after("inline", "pi-task-lists", taskListsRule);
+markdownIt.core.ruler.after("pi-task-lists", "pi-math", mathRule);
 markdownIt.core.ruler.after("block", "pi-alerts", alertsRule);
 
 // ```mermaid fences become <pre class="mermaid"> blocks that the injected
@@ -195,10 +197,91 @@ function formatAlertTitle(type: string): string {
   return type.charAt(0) + type.slice(1).toLowerCase();
 }
 
-interface MathReplacement {
-  placeholder: string;
-  html: string;
-  block: boolean;
+function mathRule(state: MdState): void {
+  for (let index = 0; index < state.tokens.length; index += 1) {
+    const token = state.tokens[index];
+    if (!token || token.type !== "inline" || !token.children) {
+      continue;
+    }
+
+    if (replaceDisplayMathBlock(state, index, token)) {
+      index -= 1;
+      continue;
+    }
+
+    token.children = token.children.flatMap((child) =>
+      child.type === "text" ? renderMathText(state, child.content) : [child],
+    );
+  }
+}
+
+function replaceDisplayMathBlock(
+  state: MdState,
+  index: number,
+  token: MdToken,
+): boolean {
+  if (
+    state.tokens[index - 1]?.type !== "paragraph_open" ||
+    state.tokens[index + 1]?.type !== "paragraph_close" ||
+    !token.children?.every(
+      (child) => child.type === "text" || child.type === "softbreak",
+    )
+  ) {
+    return false;
+  }
+
+  const spans = findMarkdownMathSpans(token.content);
+  const span = spans[0];
+  if (
+    spans.length !== 1 ||
+    !span?.displayMode ||
+    token.content.slice(0, span.start).trim() ||
+    token.content.slice(span.end).trim()
+  ) {
+    return false;
+  }
+
+  const replacement = new state.Token("html_block", "", 0);
+  replacement.content = `${renderKatex(span.expression, true)}\n`;
+  state.tokens.splice(index - 1, 3, replacement);
+  return true;
+}
+
+function renderMathText(state: MdState, value: string): MdToken[] {
+  const spans = findMarkdownMathSpans(value);
+  if (spans.length === 0) {
+    const text = new state.Token("text", "", 0);
+    text.content = value;
+    return [text];
+  }
+
+  const tokens: MdToken[] = [];
+  let cursor = 0;
+  for (const span of spans) {
+    if (span.start > cursor) {
+      const text = new state.Token("text", "", 0);
+      text.content = value.slice(cursor, span.start);
+      tokens.push(text);
+    }
+    const math = new state.Token("html_inline", "", 0);
+    math.content = renderKatex(span.expression, span.displayMode);
+    tokens.push(math);
+    cursor = span.end;
+  }
+  if (cursor < value.length) {
+    const text = new state.Token("text", "", 0);
+    text.content = value.slice(cursor);
+    tokens.push(text);
+  }
+  return tokens;
+}
+
+function renderKatex(expression: string, displayMode: boolean): string {
+  return katex.renderToString(expression, {
+    displayMode,
+    throwOnError: false,
+    strict: "ignore",
+  });
 }
 
 export function renderMarkdownPage(
@@ -206,7 +289,7 @@ export function renderMarkdownPage(
   title: string,
   artifact?: string | ArtifactPageChrome,
 ): string {
-  const body = renderMarkdownBody(markdown);
+  const body = markdownIt.render(markdown);
   const escapedTitle = escapeHtml(title);
   const artifactId = typeof artifact === "string" ? artifact : artifact?.id;
   const viewerBase =
@@ -261,74 +344,6 @@ ${body}
 </body>
 </html>
 `;
-}
-
-function renderMarkdownBody(markdown: string): string {
-  const replacements: MathReplacement[] = [];
-  const markdownWithPlaceholders = replaceMath(markdown, replacements);
-  let html = markdownIt.render(markdownWithPlaceholders);
-
-  for (const replacement of replacements) {
-    if (replacement.block) {
-      html = html.replace(
-        `<p>${replacement.placeholder}</p>`,
-        replacement.html,
-      );
-    }
-    html = html.replaceAll(replacement.placeholder, replacement.html);
-  }
-
-  return html;
-}
-
-function replaceMath(
-  markdown: string,
-  replacements: MathReplacement[],
-): string {
-  let output = "";
-  let cursor = 0;
-  const displayMath = /\$\$([\s\S]+?)\$\$/g;
-
-  for (const match of markdown.matchAll(displayMath)) {
-    const matchText = match[0];
-    const expression = match[1];
-    if (match.index === undefined || expression === undefined) {
-      continue;
-    }
-
-    output += markdown.slice(cursor, match.index);
-    const placeholder = `@@PI_ARTIFACT_MATH_BLOCK_${replacements.length}@@`;
-    replacements.push({
-      placeholder,
-      html: katex.renderToString(expression.trim(), {
-        displayMode: true,
-        throwOnError: false,
-        strict: "ignore",
-      }),
-      block: true,
-    });
-    output += placeholder;
-    cursor = match.index + matchText.length;
-  }
-
-  output += markdown.slice(cursor);
-
-  return output.replace(
-    /(?<!\$)\$([^\n$]+?)\$(?!\$)/g,
-    (_match, expression: string) => {
-      const placeholder = `@@PI_ARTIFACT_MATH_INLINE_${replacements.length}@@`;
-      replacements.push({
-        placeholder,
-        html: katex.renderToString(expression.trim(), {
-          displayMode: false,
-          throwOnError: false,
-          strict: "ignore",
-        }),
-        block: false,
-      });
-      return placeholder;
-    },
-  );
 }
 
 function escapeHtml(value: string): string {
