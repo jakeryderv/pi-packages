@@ -9,6 +9,7 @@ import {
 } from "node:http";
 import { extname, resolve } from "node:path";
 
+import { renderArtifactExport } from "./export.ts";
 import { isPathInside } from "./path-safety.ts";
 import { getArtifactRenderer } from "./renderer-registry.ts";
 import { RUNTIME_ROOTS } from "./runtime.ts";
@@ -240,6 +241,10 @@ async function handleRequest(
     await sendRenderedArtifact(artifact, basePath, response);
     return;
   }
+  if (relativePath === "export") {
+    await sendArtifactExport(artifact, response);
+    return;
+  }
 
   await sendArtifactFile(artifact, relativePath, response);
 }
@@ -362,10 +367,11 @@ async function sendViewer(
       const cwd = escapeHtml(artifact.manifest.cwd);
       const updated = escapeHtml(artifact.manifest.updated);
       const href = `${basePath}/artifacts/${encodeURIComponent(artifact.id)}/`;
+      const exportHref = `${href}export`;
       const status = renderStatusLabel(artifact.manifest.lastRender);
 
       return `<li>
-        <div class="row-title"><a href="${href}">${title}</a><span class="pi-artifact-badge">${stack}</span><span class="pi-artifact-badge ${status.className}">${status.label}</span></div>
+        <div class="row-title"><a href="${href}">${title}</a><span class="pi-artifact-badge">${stack}</span><span class="pi-artifact-badge ${status.className}">${status.label}</span><a class="row-export" href="${exportHref}">Export</a></div>
         <small><code>${id}</code> · updated ${updated}</small>
         <small>${cwd}</small>
       </li>`;
@@ -398,6 +404,7 @@ small { display: block; color: color-mix(in srgb, CanvasText 70%, Canvas); }
 .scope { font-size: 0.85rem; font-weight: 400; }
 .scope a { font-size: inherit; font-weight: inherit; }
 .row-title { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+.row-export { margin-left: auto; font-size: 0.9rem; font-weight: 600; }
 ${artifactChromeStyles()}
 @media (max-width: 720px) { form { grid-template-columns: 1fr; } .viewer-toolbar { align-items: flex-start; flex-direction: column; } }
 </style>
@@ -408,7 +415,6 @@ ${artifactChromeStyles()}
 <div class="viewer-toolbar-actions">
 ${viewerScopeSwitcher(basePath, scope)}
 <a href="${viewerRefreshHref(basePath, params)}">Refresh</a>
-<span class="pi-artifact-disabled" aria-disabled="true" title="Export support is planned">Export</span>
 </div>
 </nav>
 <header>
@@ -522,6 +528,22 @@ async function sendRenderedArtifact(
       basePath,
     }),
   );
+}
+
+async function sendArtifactExport(
+  artifact: PreviewArtifactRecord,
+  response: ServerResponse,
+): Promise<void> {
+  const html = await renderArtifactExport(artifact);
+  response.statusCode = 200;
+  response.setHeader("Content-Type", "text/html; charset=utf-8");
+  response.setHeader(
+    "Content-Disposition",
+    `attachment; filename="${artifact.id}.html"`,
+  );
+  response.setHeader("Connection", "close");
+  response.setHeader("Content-Length", Buffer.byteLength(html));
+  response.end(html);
 }
 
 async function sendRuntimeFile(

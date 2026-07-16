@@ -296,6 +296,8 @@ export function renderMarkdownPage(
     typeof artifact === "object" ? (artifact.basePath ?? "") : "";
   const toolbar =
     typeof artifact === "object" ? renderArtifactToolbar(artifact) : "";
+  const chromeStyles =
+    typeof artifact === "object" ? artifactChromeStyles() : "";
   const liveReload = artifactId
     ? `<script src="/runtime/pi/viewer-live.js" data-artifact-id="${escapeHtml(artifactId)}" data-viewer-base="${escapeHtml(viewerBase)}" defer></script>\n`
     : "";
@@ -334,7 +336,7 @@ blockquote { border-left: 0.25rem solid color-mix(in srgb, CanvasText 25%, Canva
 .pi-alert-warning { --pi-alert-color: #d97706; }
 .pi-alert-caution { --pi-alert-color: #dc2626; }
 .katex-display { overflow-x: auto; overflow-y: hidden; }
-${artifactChromeStyles()}
+${chromeStyles}
 </style>
 <link rel="stylesheet" href="/runtime/katex/katex.min.css">
 ${hljsCss}${mermaidRuntime}${liveReload}</head>

@@ -70,6 +70,39 @@ Structured result (`details`):
 Tool `content` should contain a concise human summary. Tool `details` is the
 source of truth for structured follow-up.
 
+## `export_artifact`
+
+Input:
+
+```json
+{
+  "id": "artifact-title"
+}
+```
+
+Structured result (`details`):
+
+```json
+{
+  "ok": true,
+  "id": "artifact-title",
+  "path": "/home/me/.pi/artifacts/artifact-title/exports/artifact-title.html",
+  "bytes": 412345
+}
+```
+
+The tool renders the current bundle into one portable HTML document and
+atomically replaces the deterministic export path. It does not start the preview
+server. Markdown and html artifacts are both supported. Required package runtime
+CSS/JavaScript, KaTeX fonts, icons, referenced `assets/` files, `srcset` entries,
+inline CSS asset URLs, and `<pi-data-source>` JSON snapshots are embedded.
+
+The generated document has no live-viewer toolbar or SSE connection. It carries
+a restrictive meta CSP, permits only nonce-bearing package runtime scripts,
+disables network connections, and removes authored executable scripts, `on*=`
+handlers, and `javascript:` URLs. Missing, malformed, or escaping referenced
+assets fail export rather than silently producing a partial file.
+
 ## `list_artifacts`
 
 Input (all optional):
@@ -170,8 +203,10 @@ session's cwd; `?all` is kept as a legacy alias for `?scope=all`. Gallery
 pages and open artifact pages subscribe to Server-Sent Events
 and live-reload on render/delete/session-scope changes. The gallery supports
 server-side search plus stack/status filters (`markdown`/`html`, OK, warnings,
-errors, never rendered). Gallery and artifact pages include a persistent toolbar
-for navigation and stable future actions such as export.
+errors, never rendered). Each gallery row and shared-shell artifact page exposes
+an Export link that downloads a freshly generated standalone HTML document. The
+download route does not persist a file; use `export_artifact` for the deterministic
+on-disk copy.
 
 When a Chromium-family browser is available, `/viewer` launches a dedicated,
 chromeless app window with an isolated profile, managed by the extension and

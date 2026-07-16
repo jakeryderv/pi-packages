@@ -157,6 +157,17 @@ Implemented alongside mermaid:
   atomic rename.
 - `markdown-it` requires the patched 14.3 release line.
 
+### 0.9.0 — portable single-file export
+
+- `export_artifact` writes a deterministic standalone HTML file for markdown or
+  html bundles under the artifact's `exports/` directory.
+- Gallery rows and shared-shell artifact toolbars provide direct generated
+  downloads without persisting another file.
+- Package runtime styles/scripts, KaTeX fonts, icons, referenced artifact assets,
+  and JSON component feeds are embedded.
+- A standalone CSP disables network access, grants a random nonce only to
+  package-owned runtime scripts, and authored executable hooks are removed.
+
 ## Current security posture
 
 - Artifact previews start lazily, bind only to localhost, and require an
@@ -179,8 +190,8 @@ Implemented alongside mermaid:
 
 ## Parked / future work
 
-- **Export flows:** produce portable outputs, likely starting with single-file
-  HTML export for html artifacts and rendered HTML/PDF for markdown artifacts.
+- **Additional export formats:** single-file HTML shipped in 0.9.0; PDF and ZIP
+  bundle export remain future options.
 - **Retention/cleanup policy:** age-based and bulk deletion shipped in 0.6.0
   (`delete_artifacts`, `/artifacts-clean`). Automatic/background retention and
   project/session-scoped filters remain future options.

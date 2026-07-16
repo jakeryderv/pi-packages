@@ -112,6 +112,7 @@ test("preview server viewer lists store artifacts", async (t) => {
   assert.match(html, /Gallery Item/);
   assert.match(html, /Never rendered/);
   assert.match(html, /\/artifacts\/gallery-item\//);
+  assert.match(html, /\/artifacts\/gallery-item\/export/);
   // Live-update script must be a served file (CSP script-src 'self' blocks
   // inline <script>), and the served file must exist.
   assert.match(html, /<script src="\/runtime\/pi\/viewer-live\.js"/);
@@ -385,6 +386,7 @@ test("preview server renders registered markdown artifacts with CSP", async (t) 
   assert.match(pageHtml, /pi-artifact-toolbar/);
   assert.match(pageHtml, /← Gallery/);
   assert.match(pageHtml, /Export/);
+  assert.match(pageHtml, new RegExp(`${artifact.id}/export`));
   // Artifact page subscribes to live reload scoped to its own id.
   assert.match(
     pageHtml,
@@ -403,6 +405,7 @@ test("preview server renders registered markdown artifacts with CSP", async (t) 
 
   const encodedTraversal = await fetch(`${url}assets/%2e%2e%2fmanifest.json`);
   assert.notEqual(encodedTraversal.status, 200);
+  await encodedTraversal.text();
 
   const externalFile = join(root, "outside.json");
   await writeFile(externalFile, '{"secret":true}');
@@ -424,11 +427,24 @@ test("preview server renders registered markdown artifacts with CSP", async (t) 
   if (symlinkCreated) {
     const leaked = await fetch(`${url}assets/leak.json`);
     assert.equal(leaked.status, 403);
+    await leaked.text();
   }
 
   await writeFile(join(scaffolded.path, "assets", "app.js"), "alert(1);");
   const scriptResponse = await fetch(`${url}assets/app.js`);
   assert.equal(scriptResponse.status, 403);
+  await scriptResponse.text();
+
+  const exported = await fetch(`${url}export`);
+  assert.equal(exported.status, 200);
+  assert.equal(
+    exported.headers.get("content-disposition"),
+    `attachment; filename="${artifact.id}.html"`,
+  );
+  const exportHtml = await exported.text();
+  assert.match(exportHtml, /data:image\/svg\+xml;base64,/);
+  assert.doesNotMatch(exportHtml, /(?:src|href)="\/runtime\//);
+  assert.doesNotMatch(exportHtml, /(?:src|href)="assets\//);
 });
 
 test("preview server serves namespaced runtime assets and guards traversal", async (t) => {

@@ -2,6 +2,7 @@ import { Type } from "typebox";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
+import { writeArtifactExport } from "./export.ts";
 import {
   getArtifactRenderer,
   isRegisteredArtifactStack,
@@ -46,6 +47,10 @@ interface RenderArtifactParams {
   id: string;
 }
 
+interface ExportArtifactParams {
+  id: string;
+}
+
 interface DeleteArtifactParams {
   id: string;
 }
@@ -74,6 +79,7 @@ export default function (pi: ExtensionAPI) {
   registerPreviewLifecycle(pi, previewServer, viewerWindow);
   registerScaffoldTool(pi);
   registerRenderTool(pi, previewServer, viewerWindow);
+  registerExportTool(pi);
   registerListTool(pi);
   registerDeleteTool(pi, previewServer);
   registerDeleteManyTool(pi, previewServer);
@@ -413,6 +419,54 @@ function renderFailure(error: unknown) {
       ],
     },
   };
+}
+
+function registerExportTool(pi: ExtensionAPI): void {
+  pi.registerTool({
+    name: "export_artifact",
+    label: "Export Artifact",
+    description:
+      "Export an artifact as a self-contained HTML file with runtime resources and bundle assets inlined. " +
+      "Returns { ok, id, path, bytes }.",
+    promptSnippet: "Export an artifact to one portable HTML file",
+    parameters: Type.Object({
+      id: Type.String({
+        description: "Artifact id returned by scaffold_artifact.",
+      }),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      const input = params as ExportArtifactParams;
+      try {
+        const artifact = await loadArtifact(input.id);
+        const exported = await writeArtifactExport(artifact);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Exported artifact ${artifact.id} to ${exported.path} (${exported.bytes} bytes).`,
+            },
+          ],
+          details: {
+            ok: true,
+            id: artifact.id,
+            path: exported.path,
+            bytes: exported.bytes,
+          },
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `export_artifact failed: ${message}`,
+            },
+          ],
+          details: { ok: false, id: input.id, error: message },
+        };
+      }
+    },
+  });
 }
 
 function registerListTool(pi: ExtensionAPI): void {

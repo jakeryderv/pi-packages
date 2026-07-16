@@ -42,7 +42,7 @@ export function renderArtifactToolbar(input: ArtifactPageChrome): string {
   </div>
   <div class="pi-artifact-toolbar-actions">
     <a href="${artifactHref}">Refresh</a>
-    <span class="pi-artifact-disabled" aria-disabled="true" title="Export support is planned">Export</span>
+    <a href="${artifactHref}export">Export</a>
   </div>
 </nav>`;
 }

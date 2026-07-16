@@ -5,7 +5,7 @@ validate, and preview artifact bundles — portable markdown documents and an
 interactive html stack (declarative components, Pico CSS, and CSP-clean
 Chart.js) — in a session-scoped viewer.
 
-> **Status: markdown + declarative html, live viewer.** The package can scaffold markdown
+> **Status: markdown + declarative html, live viewer + single-file export.** The package can scaffold markdown
 > and html artifact bundles, validate/normalize them, serve localhost previews,
 > and show a session-scoped browser gallery via `/viewer` that updates live
 > (Server-Sent Events) as artifacts are rendered or deleted — and open artifact
@@ -16,6 +16,16 @@ Chart.js) — in a session-scoped viewer.
 > [API contract](https://github.com/jakeryderv/pi-packages/blob/main/packages/pi-artifacts/docs/api.md),
 > and [design notes](https://github.com/jakeryderv/pi-packages/blob/main/packages/pi-artifacts/docs/notes/design.md)
 > for the broader plan.
+
+## What's new in 0.9.0
+
+- **Portable single-file HTML export** for both markdown and html artifacts via
+  `export_artifact` or the viewer's per-artifact Export action.
+- Package runtime CSS/JavaScript, KaTeX fonts, icons, referenced images, and
+  artifact-local JSON feeds are embedded into the exported document.
+- Exports carry their own restrictive CSP, authorize only embedded package-owned
+  runtime scripts, and remove authored executable scripts, event handlers, and
+  `javascript:` URLs.
 
 ## What's new in 0.8.1
 
@@ -100,6 +110,9 @@ bundles.
 - **`render_artifact`** tool — validate/normalize an authored bundle and preview it on localhost.
   - **markdown:** Prettier + markdownlint + strict KaTeX math; GFM task lists, GitHub-style alerts, footnotes, syntax-highlighted code, and Mermaid fences rendered as live diagrams.
   - **html:** Prettier + HTMLHint + CSP/component capability checks; shared runtime (Pico CSS, declarative Web Components, artifact-local JSON feeds, Chart.js, Mermaid, and icons) injected from `/runtime`.
+- **`export_artifact`** tool — write a self-contained HTML export to
+  `<bundle>/exports/<id>.html`, with referenced assets and required runtime
+  resources embedded.
 - **`list_artifacts`** tool — list artifact bundles in the store, newest first;
   optionally scoped to the current session or workspace (cwd).
 - **`delete_artifact`** tool — delete a bundle and all of its files from the store.
@@ -110,7 +123,8 @@ bundles.
   scope (this session / this workspace / all artifacts), search/filter
   controls, render status badges, and auto-updating via Server-Sent Events as
   you render or delete. Gallery and shared-shell artifact pages include a
-  persistent toolbar with navigation/actions, ready for future export controls.
+  persistent toolbar with navigation and a single-file Export action. Gallery
+  rows also provide direct export downloads without writing an export file.
   Full authored HTML documents deliberately opt out of the shared shell, including
   its toolbar and live reload. When a Chromium-family
   browser is available it opens in a dedicated, chromeless app
@@ -131,7 +145,8 @@ bundles.
 
 Artifacts are stored as content-only bundles under `~/.pi/artifacts/<id>/`
 (`manifest.json` + entry file + `assets/`), keyed to their originating session
-via provenance metadata in the manifest.
+via provenance metadata in the manifest. Tool-generated standalone files live
+under the bundle's `exports/` directory.
 
 ## Security
 
@@ -146,6 +161,9 @@ only from the package-owned `/runtime` namespace. Viewer, SSE, artifact pages,
 and artifact assets require the random capability path; `/runtime` intentionally
 remains a stable public path because it contains only immutable package-owned
 assets, never artifact content. Review the source before installing.
+Standalone exports embed a second restrictive CSP: referenced content assets are
+converted to data URLs, package-owned runtime scripts receive a random nonce,
+network connections are disabled, and authored executable hooks are removed.
 
 ## Development
 

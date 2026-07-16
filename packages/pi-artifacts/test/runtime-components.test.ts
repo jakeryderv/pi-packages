@@ -182,6 +182,20 @@ test("file feeds stay under artifact assets and render values as text", async ()
   });
   encoded.connectedCallback?.();
   assert.equal(harness.fetchCalls.length, 1);
+
+  const inlineMetric = component(harness, "pi-metric", {
+    label: "Inline",
+    "data-feed": "inline",
+    field: "total",
+  });
+  inlineMetric.connectedCallback?.();
+  const inline = component(harness, "pi-data-source", {
+    name: "inline",
+    "data-pi-export-json": '{"total":99}',
+  });
+  inline.connectedCallback?.();
+  assert.equal(harness.fetchCalls.length, 1);
+  assert.equal(inlineMetric.children[1]?.textContent, "99");
 });
 
 test("table and chart consume feed values and clean up safely", async () => {

@@ -91,10 +91,23 @@
     connectedCallback() {
       const name = this.getAttribute("name");
       const src = this.getAttribute("src");
-      if (!name || !src) return;
+      const inlineJson = this.getAttribute("data-pi-export-json");
+      if (!name || (!src && inlineJson === null)) return;
 
       this.abortController?.abort();
       this.abortController = new AbortController();
+      if (inlineJson !== null) {
+        try {
+          publish(name, JSON.parse(inlineJson));
+        } catch (error) {
+          publish(
+            name,
+            undefined,
+            `invalid inline JSON (${error instanceof Error ? error.message : String(error)})`,
+          );
+        }
+        return;
+      }
       let sourceUrl;
       try {
         sourceUrl = artifactAssetUrl(src);

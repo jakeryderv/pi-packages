@@ -1,6 +1,6 @@
 ---
 name: artifacts-authoring
-description: How to author portable visualization artifacts for the pi-artifacts viewer. Use when creating, editing, or rendering markdown or html artifact bundles via the scaffold_artifact and render_artifact tools.
+description: How to author portable visualization artifacts for the pi-artifacts viewer. Use when creating, editing, rendering, or exporting markdown or html artifact bundles via the scaffold_artifact, render_artifact, and export_artifact tools.
 ---
 
 # Authoring Artifacts
@@ -28,6 +28,9 @@ Use this skill when creating or revising `pi-artifacts` bundles.
    or workspace (same cwd) — `delete_artifact({ id })` to remove one, and
    `delete_artifacts({ ids?, older_than_days? })` for bulk cleanup
    (`/artifacts-clean <days>` does the age-based form interactively).
+8. Use `export_artifact({ id })` when the user needs one portable HTML file.
+   It writes `<bundle>/exports/<id>.html`; the viewer's Export links generate the
+   same standalone document as a browser download without persisting it.
 
 The scaffold writes only structure:
 

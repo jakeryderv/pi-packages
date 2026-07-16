@@ -42,6 +42,8 @@ export function renderHtmlPage(
     typeof artifact === "object" ? (artifact.basePath ?? "") : "";
   const toolbar =
     typeof artifact === "object" ? renderArtifactToolbar(artifact) : "";
+  const chromeStyles =
+    typeof artifact === "object" ? artifactChromeStyles() : "";
   const liveReload = artifactId
     ? `<script src="${RUNTIME_URLS.viewerLiveJs}" data-artifact-id="${escapeHtml(artifactId)}" data-viewer-base="${escapeHtml(viewerBase)}" defer></script>\n`
     : "";
@@ -75,7 +77,7 @@ pi-card, pi-metric { padding: 1rem; border: 1px solid var(--pico-muted-border-co
 .pi-metric-value { display: block; margin: 0.2rem 0; font-size: clamp(1.5rem, 4vw, 2.5rem); line-height: 1.1; }
 .pi-component-error { color: #dc2626; }
 @media (max-width: 720px) { pi-grid { --pi-grid-columns: 1 !important; } }
-${artifactChromeStyles()}
+${chromeStyles}
 </style>
 <script src="${RUNTIME_URLS.chartJs}" defer></script>
 <script src="${RUNTIME_URLS.chartHydrateJs}" defer></script>
